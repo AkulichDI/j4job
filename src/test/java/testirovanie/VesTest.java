@@ -1,8 +1,10 @@
 package testirovanie;
 
 import OperatorVetvlenia.*;
+import cycle.Counter;
 import org.junit.jupiter.api.Test;
 
+import static OperatorVetvlenia.MultipleSwitchWeek.numberOfDay;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.assertj.core.api.BDDAssertions.withPrecision;
 
@@ -548,4 +550,82 @@ class ThreeMaxTest {
         int expected = 100;
         assertThat(result).isEqualTo(expected);
     }
+}
+class MultipleSwitchWeekTest {
+
+
+    @Test
+    void Monday() {
+        String name = "Monday";
+        int result = numberOfDay(name);
+        int expected = 1;
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void Friday() {
+        String name = "Friday";
+        int result = numberOfDay(name);
+        int expected = 5;
+        assertThat(result).isEqualTo(expected);
+    }
+    @Test
+    void FridayRU() {
+        String name = "Пятница";
+        int result = numberOfDay(name);
+        int expected = 5;
+        assertThat(result).isEqualTo(expected);
+    }
+
+
+
+}
+
+class CounterTest{
+    @Test
+    void when5and10Then45() {
+        int start = 5;
+        int finish = 10;
+        int expected = 45;
+        long result = Counter.sum (start, finish);
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void when5and0Then0() {
+        int start = 5;
+        int finish = 0;
+        int expected = 0;
+        long result = Counter.sum (start, finish);
+        assertThat(result).isEqualTo(expected);
+    }
+
+
+
+    @Test
+    void when0and0Then0() {
+        int start = 0;
+        int finish = 0;
+        int expected = 0;
+        long result = Counter.sum (start, finish);
+        assertThat(result).isEqualTo(expected);
+    }
+
+
+
+    @Test
+    void whenMinus100and100Then0() {
+        int start = -100;
+        int finish = 100;
+        int expected = 0;
+        long result = Counter.sum (start, finish);
+        assertThat(result).isEqualTo(expected);
+    }
+
+
+
+
+
+
+
 }
