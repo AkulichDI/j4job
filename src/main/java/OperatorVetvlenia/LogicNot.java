@@ -23,7 +23,7 @@ public class LogicNot {
     }
 
     public static boolean evenOrNegative(int num) {
-        return isNegative(num) & isPositive(num);
+        return isEven(num) ||isNegative(num);
     }
 
 
