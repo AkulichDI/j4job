@@ -14,6 +14,12 @@ public class DivideBySix {
         }
         return result;
     }
+
+    public static void main(String[] args) {
+        int s = 9222223;
+        String a = checkNumber(s);
+        System.out.println(a);
+    }
 }
 
 
