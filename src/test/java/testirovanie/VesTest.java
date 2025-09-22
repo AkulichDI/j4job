@@ -1,5 +1,8 @@
 package testirovanie;
 
+import OperatorVetvlenia.DummyBot;
+import OperatorVetvlenia.LogicNot;
+import OperatorVetvlenia.Max;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
@@ -97,6 +100,202 @@ class RectangleAreaTest{
         double k = 476;
         double output = RectangleArea.square(p, k);
         assertThat(output).isEqualTo(expected, withPrecision(0.01));
+    }
+
+}
+class DummyBotTest{
+    @Test
+    void whenGreetBot() {
+        String input = "Hi, Bot.";
+        String result = DummyBot.answer(input);
+        String expected = "Hi, SmartAss.";
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void whenByeBot() {
+        String input = "Bye.";
+        String result = DummyBot.answer(input);
+        String expected = "See you later.";
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void whenUnknownBot() {
+        String input = "Can you add two plus two?";
+        String result = DummyBot.answer(input);
+        String expected = "I don't know. Please, ask another question.";
+        assertThat(result).isEqualTo(expected);
+    }
+
+
+
+
+}
+class MaxTest{
+    @Test
+    void whenMax1To2Then2() {
+        int left = 1;
+        int right = 2;
+        int result = Max.max(left, right);
+        int expected = 2;
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void whenMaxMinus1To2Then2() {
+        int left = -1;
+        int right = 2;
+        int result = Max.max(left, right);
+        int expected = 2;
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void whenMax200ToMinus4Then2() {
+        int left = 200;
+        int right = 3;
+        int result = Max.max(left, right);
+        int expected = 200;
+        assertThat(result).isEqualTo(expected);
+    }
+    @Test
+    void whenMax2To2Then2() {
+        int left = 200;
+        int right = 3;
+        int result = Max.max(left, right);
+        int expected = 200;
+        assertThat(result).isEqualTo(expected);
+    }
+
+
+}
+class  LogicNotTest{
+
+    @Test
+    void whenIsEvenTrue() {
+        int num = 2;
+        boolean result = LogicNot.isEven(num);
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    void whenIsEvenFalse() {
+        int num = 3;
+        boolean result = LogicNot.isEven(num);
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void whenIsPositiveTrue() {
+        int num = 2;
+        boolean result = LogicNot.isPositive(num);
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    void whenIsPositiveFalse() {
+        int num = -2;
+        boolean result = LogicNot.isPositive(num);
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void whenNumIs0IsPositiveFalse() {
+        int num = 0;
+        boolean result = LogicNot.isPositive(num);
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void whenNotEvenFalse() {
+        int num = 2;
+        boolean result = LogicNot.notEven(num);
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void whenNotEvenTrue() {
+        int num = 3;
+        boolean result = LogicNot.notEven(num);
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    void whenNegativeTrue() {
+        int num = -2;
+        boolean result = LogicNot.isNegative(num);
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    void whenNegativeFalse() {
+        int num = 2;
+        boolean result = LogicNot.isNegative(num);
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void whenNumIs0NegativeFalse() {
+        int num = 0;
+        boolean result = LogicNot.isNegative(num);
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void whenNotEvenAndPositiveIsTrue() {
+        int num = 3;
+        boolean result = LogicNot.notEvenAndPositive(num);
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    void whenNotEvenFalseIsAllFalse() {
+        int num = 2;
+        boolean result = LogicNot.notEvenAndPositive(num);
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void whenPositiveFalseIsAllFalse() {
+        int num = -3;
+        boolean result = LogicNot.notEvenAndPositive(num);
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void whenNotEvenAndPositiveIsFalse() {
+        int num = 0;
+        boolean result = LogicNot.notEvenAndPositive(num);
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void whenEvenOrNegativeIsTrue() {
+        int num = -2;
+        boolean result = LogicNot.evenOrNegative(num);
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    void whenEvenIsTrueThenAllIsTrue() {
+        int num = 2;
+        boolean result = LogicNot.evenOrNegative(num);
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    void whenNegativeIsTrueThenAllIsTrue() {
+        int num = -3;
+        boolean result = LogicNot.evenOrNegative(num);
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    void whenEvenOrNegativeIsFalse() {
+        int num = 3;
+        boolean result = LogicNot.evenOrNegative(num);
+        assertThat(result).isFalse();
     }
 
 }
