@@ -2,6 +2,7 @@ package testirovanie;
 
 import OperatorVetvlenia.*;
 import cycle.Counter;
+import cycle.Factorial;
 import org.junit.jupiter.api.Test;
 
 import static OperatorVetvlenia.MultipleSwitchWeek.numberOfDay;
@@ -624,8 +625,55 @@ class CounterTest{
 
 
 
+    @Test
+    void whenSumEvenNumbersFromOneToTenThenThirty() {
+        int start = 1;
+        int finish = 10;
+        int result = Counter.sumByEven(start, finish);
+        int expected = 30;
+        assertThat(result).isEqualTo(expected);
+    }
+
+
+    @Test
+    void whenSumEvenNumbersFrom1To90Then2070() {
+        int start = 1;
+        int finish = 90;
+        int result = Counter.sumByEven(start, finish);
+        int expected = 2070;
+        assertThat(result).isEqualTo(expected);
+    }
+
+
+    @Test
+    void whenSumEvenNumbersFromMinus10To10Then2070() {
+        int start = 1;
+        int finish = 90;
+        int result = Counter.sumByEven(start, finish);
+        int expected = 2550;
+        assertThat(result).isEqualTo(expected);
+    }
 
 
 
+}
 
+
+
+class FactorialTest {
+    @Test
+    void whenCalculateFactorialForFiveThenOneHundredTwenty() {
+        int expected = 120;
+        int number = 5;
+        int output = Factorial.calculate(number);
+        assertThat(output).isEqualTo(expected);
+    }
+
+    @Test
+    void whenCalculateFactorialForZeroThenOne() {
+        int expected = 1;
+        int number = 0;
+        int output = Factorial.calculate(number);
+        assertThat(output).isEqualTo(expected);
+    }
 }
