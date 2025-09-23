@@ -1035,3 +1035,75 @@ class ArrayCharTest {
         assertThat(result).isFalse();
     }
 }
+
+
+class EqualLastTest {
+    @Test
+    public void whenEqual() {
+        int[] left = {1, 2, 3};
+        int[] right = {5, 4, 3};
+        boolean result = EqualLast.check(left, right);
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    public void whenNotEqual() {
+        int[] left = {1, 2, 3};
+        int[] right = {3, 3, 4};
+        boolean result = EqualLast.check(left, right);
+        assertThat(result).isFalse();
+    }
+}
+
+
+class RollBackArrayTest {
+    @Test
+    public void whenEmpty() {
+        int[] input = new int[] {};
+        int[] expected = new int[] {};
+        int[] result = RollBackArray.rollback(input);
+        assertThat(result).containsExactly(expected);
+    }
+
+    @Test
+    public void whenOne() {
+        int[] input = new int[] {1};
+        int[] expected = new int[] {1};
+        int[] result = RollBackArray.rollback(input);
+        assertThat(result).containsExactly(expected);
+    }
+
+    @Test
+    public void whenFull() {
+        int[] input = new int[] {1, 2, 3, 4};
+        int[] expected = new int[] {4, 3, 2, 1};
+        int[] result = RollBackArray.rollback(input);
+        assertThat(result).containsExactly(expected);
+    }
+
+    @Test
+    public void whenTheSame() {
+        int[] input = new int[] {1, 1, 1, 1};
+        int[] expected = new int[] {1, 1, 1, 1};
+        int[] result = RollBackArray.rollback(input);
+        assertThat(result).containsExactly(expected);
+    }
+}
+
+ class EndsWithTest {
+    @Test
+    public void whenEndWithPrefixThenTrue() {
+        char[] word = {'H', 'e', 'l', 'l', 'o'};
+        char[] postfix = {'l', 'o'};
+        boolean result = EndsWith.endsWith(word, postfix);
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    public void whenNotEndWithPrefixThenFalse() {
+        char[] word = {'H', 'e', 'l', 'l', 'o'};
+        char[] postfix = {'l', 'a'};
+        boolean result = EndsWith.endsWith(word, postfix);
+        assertThat(result).isFalse();
+    }
+}
