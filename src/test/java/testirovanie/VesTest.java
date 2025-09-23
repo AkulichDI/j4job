@@ -1,6 +1,9 @@
 package testirovanie;
 
 import OperatorVetvlenia.*;
+import array.FindLoop;
+import array.Square;
+import array.SwitchArray;
 import cycle.*;
 import org.junit.jupiter.api.Test;
 
@@ -840,4 +843,130 @@ class MortgageTest {
         int expected = 1;
         assertThat(result).isEqualTo(expected);
     }
+}
+
+
+class SquareTest {
+    @Test
+    void whenBound3Then014() {
+        int bound = 3;
+        int[] result = Square.calculate(bound);
+        int[] expected = new int[] {0, 1, 4};
+        assertThat(result).containsExactly(expected);
+    }
+
+    @Test
+    void whenBound5Then016() {
+        int bound = 5;
+        int[] result = Square.calculate(bound);
+        int[] expected = new int[] {0, 1, 4, 9, 16};
+        assertThat(result).containsExactly(expected);
+    }
+
+
+
+}
+
+
+
+
+class FindLoopTest {
+    @Test
+    void whenArrayHas5Then0() {
+        int[] data = new int[] {5, 10, 3};
+        int element = 5;
+        int result = FindLoop.indexOf(data, element);
+        int expected = 0;
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void whenArrayHas10Then10() {
+        int[] data = new int[] {5, 10, 3};
+        int element = 10;
+        int result = FindLoop.indexOf(data, element);
+        int expected = 1;
+        assertThat(result).isEqualTo(expected);
+    }
+
+
+
+    @Test
+    void whenArrayHas20ThenMinus1() {
+        int[] data = new int[] {5, 10, 3};
+        int element = 20;
+        int result = FindLoop.indexOf(data, element);
+        int expected = -1;
+        assertThat(result).isEqualTo(expected);
+    }
+
+
+}
+
+
+class SwitchArrayTest {
+    @Test
+    void whenSwapBorderArrayLengthIs4() {
+        int[] input = {1, 2, 3, 4};
+        int[] result = SwitchArray.swapBorder(input);
+        int[] expected = {4, 2, 3, 1};
+        assertThat(result).containsExactly(expected);
+    }
+
+    @Test
+    void whenSwapBorderArrayLengthIs6() {
+        int[] input = {1, 2, 3, 4, 5, 6};
+        int[] result = SwitchArray.swapBorder(input);
+        int[] expected = {6, 2, 3, 4, 5, 1};
+        assertThat(result).containsExactly(expected);
+    }
+
+    @Test
+    void whenSwapBorderArrayLengthIs3() {
+        int[] input = {1, 2, 3};
+        int[] result = SwitchArray.swapBorder(input);
+        int[] expected = {3, 2, 1};
+        assertThat(result).containsExactly(expected);
+    }
+
+    @Test
+    void whenSwapBorderArrayLengthIs1() {
+        int[] input = {1};
+        int[] result = SwitchArray.swapBorder(input);
+        int[] expected = {1};
+        assertThat(result).containsExactly(expected);
+    }
+
+    @Test
+    void whenSwap0to3() {
+        int[] input = {1, 2, 3, 4};
+        int source = 0;
+        int destination = input.length - 1;
+        int[] result = SwitchArray.swap(input, source, destination);
+        int[] expected = {4, 2, 3, 1};
+        assertThat(result).containsExactly(expected);
+    }
+    @Test
+    void whenSwap4to5() {
+        int[] input = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+        int source = 4;
+        int destination = 5;
+        int[] result = SwitchArray.swap(input, source, destination);
+        int[] expected = {1, 2, 3, 4, 6, 5, 7, 8, 9, 10};
+        assertThat(result).containsExactly(expected);
+    }
+
+
+    @Test
+    void whenSwap1to4() {
+        int[] input = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+        int source = 1;
+        int destination = 4;
+        int[] result = SwitchArray.swap(input, source, destination);
+        int[] expected = {1, 5, 3, 4, 2, 6, 7, 8, 9, 10};
+        assertThat(result).containsExactly(expected);
+    }
+
+
+
 }
