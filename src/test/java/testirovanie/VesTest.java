@@ -1,9 +1,7 @@
 package testirovanie;
 
 import OperatorVetvlenia.*;
-import array.FindLoop;
-import array.Square;
-import array.SwitchArray;
+import array.*;
 import cycle.*;
 import org.junit.jupiter.api.Test;
 
@@ -969,4 +967,53 @@ class SwitchArrayTest {
 
 
 
+}
+
+class TurnTest {
+    @Test
+    void whenTurnArrayWithEvenAmountOfElementsThenTurnedArray() {
+        int[] input = new int[] {4, 1, 6, 2};
+        int[] result = Turn.back(input);
+        int[] expected = new int[] {2, 6, 1, 4};
+        assertThat(result).containsExactly(expected);
+    }
+
+    @Test
+    void whenTurnArrayWithOddAmountOfElementsThenTurnedArray() {
+        int[] input = new int[] {4, 1, 6, 2, 90};
+        int[] result = Turn.back(input);
+        int[] expected = new int[] {90, 2, 6, 1, 4};
+        assertThat(result).containsExactly(expected);
+    }
+}
+
+
+class CheckTest {
+    @Test
+    void whenDataMonoByTrueThenTrue() {
+        boolean[] data = new boolean[] {true, true, true};
+        boolean result = Check.mono(data);
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    void whenDataNotMonoByTrueThenFalse() {
+        boolean[] data = new boolean[] {true, false, true};
+        boolean result = Check.mono(data);
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void whenDataMonoByFalseThenTrue() {
+        boolean[] data = new boolean[] {false, false, false};
+        boolean result = Check.mono(data);
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    void whenDataNotMonoByFalseThenFalse() {
+        boolean[] data = new boolean[] {false, true, false};
+        boolean result = Check.mono(data);
+        assertThat(result).isFalse();
+    }
 }
