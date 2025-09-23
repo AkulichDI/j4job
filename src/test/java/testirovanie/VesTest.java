@@ -1107,3 +1107,129 @@ class RollBackArrayTest {
         assertThat(result).isFalse();
     }
 }
+
+
+
+class FindLoopTest2 {
+    @Test
+    public void whenArrayHas5Then0() {
+        int[] data = new int[] {5, 10, 3};
+        int element = 5;
+        int result = FindLoop.indexOf(data, element);
+        int expected = 0;
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    public void whenDiapasonHas8ThenResultEqualFinish() {
+        int[] data = new int[] {5, 2, 10, 2, 4, 8, 14, 3, 21, 16};
+        int element = 8;
+        int start = 2;
+        int finish = 5;
+        int result = FindLoop.indexInRange(data, element, start, finish);
+        int expected = 5;
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    public void whenDiapasonHasSomeEqualElementThen3() {
+        int[] data = new int[] {5, 10, 2, 4, 8, 4, 14, 4, 3, 21, 16};
+        int element = 4;
+        int start = 1;
+        int finish = 8;
+        int result = FindLoop.indexInRange(data, element, start, finish);
+        int expected = 3;
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    public void whenDiapasonHas2Then3() {
+        int[] data = new int[] {5, 2, 10, 2, 4};
+        int element = 2;
+        int start = 2;
+        int finish = 4;
+        int result = FindLoop.indexInRange(data, element, start, finish);
+        int expected = 3;
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    public void whenDiapasonHasNot8ThenMinus1() {
+        int[] data = new int[] {5, 2, 10, 2, 4};
+        int element = 8;
+        int start = 0;
+        int finish = 4;
+        int result = FindLoop.indexInRange(data, element, start, finish);
+        int expected = -1;
+        assertThat(result).isEqualTo(expected);
+    }
+}
+
+
+
+class MinTest {
+    @Test
+    public void whenFirstMin() {
+        int[] array = new int[] {0, 5, 10};
+        int result = Min.findMin(array);
+        int expected = 0;
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    public void whenLastMin() {
+        int[] array = new int[] {10, 5, 3};
+        int result = Min.findMin(array);
+        int expected = 3;
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    public void whenMiddleMin() {
+        int[] array = new int[] {10, 2, 5};
+        int result = Min.findMin(array);
+        int expected = 2;
+        assertThat(result).isEqualTo(expected);
+    }
+}
+class MinDiapasonTest {
+    @Test
+    public void whenFirstMin() {
+        int[] array = new int[] {-1, 0, 5, 10};
+        int start = 1;
+        int finish = 3;
+        int result = MinDiapason.findMin(array, start, finish);
+        int expected = 0;
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    public void whenLastMin() {
+        int[] array = new int[] {10, 5, 3, 1};
+        int start = 1;
+        int finish = 3;
+        int result = MinDiapason.findMin(array, start, finish);
+        int expected = 1;
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    public void whenMiddleMin() {
+        int[] array = new int[] {10, 2, 5, 1};
+        int start = 0;
+        int finish = 2;
+        int result = MinDiapason.findMin(array, start, finish);
+        int expected = 2;
+        assertThat(result).isEqualTo(expected);
+    }
+}
+
+class SortSelectedTest {
+    @Test
+    public void whenSort() {
+        int[] data = new int[] {3, 4, 1, 2, 5};
+        int[] result = SortSelected.sort(data);
+        int[] expected = new int[] {1, 2, 3, 4, 5};
+        assertThat(result).containsExactly(expected);
+    }
+}
