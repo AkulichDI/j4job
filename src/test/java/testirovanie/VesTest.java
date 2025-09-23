@@ -1,8 +1,7 @@
 package testirovanie;
 
 import OperatorVetvlenia.*;
-import cycle.Counter;
-import cycle.Factorial;
+import cycle.*;
 import org.junit.jupiter.api.Test;
 
 import static OperatorVetvlenia.MultipleSwitchWeek.numberOfDay;
@@ -675,5 +674,170 @@ class FactorialTest {
         int number = 0;
         int output = Factorial.calculate(number);
         assertThat(output).isEqualTo(expected);
+    }
+}
+
+
+class FitnessTest {
+    @Test
+    void whenIvanGreatNik() {
+        int ivan = 95;
+        int nik = 90;
+        int result = Fitness.calc(ivan, nik);
+        int expected = 0;
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void whenIvanLessByOneNik() {
+        int ivan = 90;
+        int nik = 95;
+        int result = Fitness.calc(ivan, nik);
+        int expected = 1;
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void whenIvanLessByFewNik() {
+        int ivan = 50;
+        int nik = 90;
+        int result = Fitness.calc(ivan, nik);
+        int expected = 2;
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void whenIvanEqualsNik() {
+        int ivan = 90;
+        int nik = 90;
+        int result = Fitness.calc(ivan, nik);
+        int expected = 1;
+        assertThat(result).isEqualTo(expected);
+    }
+}
+
+class CheckPrimeNumberTest {
+    @Test
+    void when5ThenTrue() {
+        int number = 5;
+        boolean result = CheckPrimeNumber.check(number);
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    void when4ThenFalse() {
+        int number = 4;
+        boolean result = CheckPrimeNumber.check(number);
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void when1ThenFalse() {
+        int number = 1;
+        boolean result = CheckPrimeNumber.check(number);
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void when11ThenTrue() {
+        int number = 11;
+        boolean result = CheckPrimeNumber.check(number);
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    void when25ThenFalse() {
+        int number = 25;
+        boolean result = CheckPrimeNumber.check(number);
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void when9ThenFalse() {
+        int number = 9;
+        boolean result = CheckPrimeNumber.check(number);
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void when49ThenFalse() {
+        int number = 49;
+        boolean result = CheckPrimeNumber.check(number);
+        assertThat(result).isFalse();
+    }
+}
+
+
+class PrimeNumberTest {
+    @Test
+    void when5Then3() {
+        int finish = 5;
+        int result = PrimeNumber.calc(finish);
+        int expected = 3;
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void when11Then5() {
+        int finish = 11;
+        int result = PrimeNumber.calc(finish);
+        int expected = 5;
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void when2Then1() {
+        int finish = 2;
+        int result = PrimeNumber.calc(finish);
+        int expected = 1;
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void when25Then9() {
+        int finish = 25;
+        int result = PrimeNumber.calc(finish);
+        int expected = 9;
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void when49Then15() {
+        int finish = 49;
+        int result = PrimeNumber.calc(finish);
+        int expected = 15;
+        assertThat(result).isEqualTo(expected);
+    }
+}
+
+class MortgageTest {
+    @Test
+    void whenAmount1000Salary1200Percent1ThenYear1() {
+        int amount = 1000;
+        int salary = 1200;
+        double percent = 1;
+        int result = Mortgage.year(amount, salary, percent);
+        int expected = 1;
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void whenAmount100Salary120Percent50ThenYear2() {
+        int amount = 100;
+        int salary = 120;
+        double percent = 50;
+        int result = Mortgage.year(amount, salary, percent);
+        int expected = 2;
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void whenAmount1000Salary1200Percent20ThenYear1() {
+        int amount = 1000;
+        int salary = 1200;
+        double percent = 20;
+        int result = Mortgage.year(amount, salary, percent);
+        int expected = 1;
+        assertThat(result).isEqualTo(expected);
     }
 }
