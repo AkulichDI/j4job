@@ -1,7 +1,8 @@
 package array;
-import java.util.Arrays;
-public class Machine {
 
+import java.util.Arrays;
+
+public class Machine {
 
 
     public static int[] change(int money, int price) {
@@ -9,19 +10,13 @@ public class Machine {
         int[] result = new int[100];
         int size = 0;
         int search = money - price;
-
-       for (int i : coins){
-           while (search>=i){
-               result[size] = i;
-               size++;
-               search -=i;
-           }
-
-       }
-
-
-
-
+        for (int i : coins) {
+            while (search >= i) {
+                result[size] = i;
+                size++;
+                search -= i;
+            }
+        }
         return Arrays.copyOf(result, size);
     }
 

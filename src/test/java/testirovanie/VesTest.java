@@ -18,8 +18,9 @@ class VesTest {
         double output = Ves.manWeight(input);
         assertThat(output).isEqualTo(exepected, withPrecision(0.01));
     }
+
     @Test
-    void whenWoman170Then92(){
+    void whenWoman170Then92() {
         short input = 179;
         double exepected = 90.85;
         double output = Ves.womanWeight(input);
@@ -28,6 +29,7 @@ class VesTest {
 
 
 }
+
 class PointTest {
     @Test
     void when00to20then2() {
@@ -75,7 +77,8 @@ class PointTest {
 
 
 }
-class RectangleAreaTest{
+
+class RectangleAreaTest {
     @Test
     void whenP6K2Square2() {
         int expected = 2;
@@ -88,12 +91,13 @@ class RectangleAreaTest{
 
     @Test
     void whenPMinus2KMinusInfinitySquare2() {
-      //  String expected = ;
+        //  String expected = ;
         int p = -2;
         double k = -1;
         double output = RectangleArea.square(p, k);
         assertThat(output).isEqualTo(Double.NEGATIVE_INFINITY);
     }
+
     @Test
     void whenMinus2K476Square2() {
         double expected = 0;
@@ -104,7 +108,8 @@ class RectangleAreaTest{
     }
 
 }
-class DummyBotTest{
+
+class DummyBotTest {
     @Test
     void whenGreetBot() {
         String input = "Hi, Bot.";
@@ -130,10 +135,9 @@ class DummyBotTest{
     }
 
 
-
-
 }
-class MaxTest{
+
+class MaxTest {
     @Test
     void whenMax1To2Then2() {
         int left = 1;
@@ -160,6 +164,7 @@ class MaxTest{
         int expected = 200;
         assertThat(result).isEqualTo(expected);
     }
+
     @Test
     void whenMax2To2Then2() {
         int left = 200;
@@ -171,7 +176,8 @@ class MaxTest{
 
 
 }
-class  LogicNotTest{
+
+class LogicNotTest {
 
     @Test
     void whenIsEvenTrue() {
@@ -302,27 +308,26 @@ class  LogicNotTest{
 }
 
 class TriangleTest {
-        @Test
-        void whenExistTrue() {
-            double ab = 2.0;
-            double ac = 2.0;
-            double bc = 2.0;
-            boolean result = Triangle.exist(ab, ac, bc);
-            assertThat(result).isTrue();
-        }
-        @Test
-        void  whenNotExist() {
-            double ab = -800;
-            double ac = 90;
-            double bc = 90;
-            boolean result = Triangle.exist(ab, ac, bc);
-            assertThat(result).isFalse();
-        }
+    @Test
+    void whenExistTrue() {
+        double ab = 2.0;
+        double ac = 2.0;
+        double bc = 2.0;
+        boolean result = Triangle.exist(ab, ac, bc);
+        assertThat(result).isTrue();
+    }
 
+    @Test
+    void whenNotExist() {
+        double ab = -800;
+        double ac = 90;
+        double bc = 90;
+        boolean result = Triangle.exist(ab, ac, bc);
+        assertThat(result).isFalse();
+    }
 
 
 }
-
 
 
 class ChessBoardTest {
@@ -481,6 +486,7 @@ class DivideBySixTest {
         assertThat(result).isEqualTo(expected);
     }
 }
+
 class ThreeMaxTest {
     @Test
     void firstMax() {
@@ -552,6 +558,7 @@ class ThreeMaxTest {
         assertThat(result).isEqualTo(expected);
     }
 }
+
 class MultipleSwitchWeekTest {
 
 
@@ -570,6 +577,7 @@ class MultipleSwitchWeekTest {
         int expected = 5;
         assertThat(result).isEqualTo(expected);
     }
+
     @Test
     void FridayRU() {
         String name = "Пятница";
@@ -579,16 +587,15 @@ class MultipleSwitchWeekTest {
     }
 
 
-
 }
 
-class CounterTest{
+class CounterTest {
     @Test
     void when5and10Then45() {
         int start = 5;
         int finish = 10;
         int expected = 45;
-        long result = Counter.sum (start, finish);
+        long result = Counter.sum(start, finish);
         assertThat(result).isEqualTo(expected);
     }
 
@@ -597,10 +604,9 @@ class CounterTest{
         int start = 5;
         int finish = 0;
         int expected = 0;
-        long result = Counter.sum (start, finish);
+        long result = Counter.sum(start, finish);
         assertThat(result).isEqualTo(expected);
     }
-
 
 
     @Test
@@ -608,10 +614,9 @@ class CounterTest{
         int start = 0;
         int finish = 0;
         int expected = 0;
-        long result = Counter.sum (start, finish);
+        long result = Counter.sum(start, finish);
         assertThat(result).isEqualTo(expected);
     }
-
 
 
     @Test
@@ -619,10 +624,9 @@ class CounterTest{
         int start = -100;
         int finish = 100;
         int expected = 0;
-        long result = Counter.sum (start, finish);
+        long result = Counter.sum(start, finish);
         assertThat(result).isEqualTo(expected);
     }
-
 
 
     @Test
@@ -655,9 +659,7 @@ class CounterTest{
     }
 
 
-
 }
-
 
 
 class FactorialTest {
@@ -849,7 +851,7 @@ class SquareTest {
     void whenBound3Then014() {
         int bound = 3;
         int[] result = Square.calculate(bound);
-        int[] expected = new int[] {0, 1, 4};
+        int[] expected = new int[]{0, 1, 4};
         assertThat(result).containsExactly(expected);
     }
 
@@ -857,21 +859,18 @@ class SquareTest {
     void whenBound5Then016() {
         int bound = 5;
         int[] result = Square.calculate(bound);
-        int[] expected = new int[] {0, 1, 4, 9, 16};
+        int[] expected = new int[]{0, 1, 4, 9, 16};
         assertThat(result).containsExactly(expected);
     }
-
 
 
 }
 
 
-
-
 class FindLoopTest {
     @Test
     void whenArrayHas5Then0() {
-        int[] data = new int[] {5, 10, 3};
+        int[] data = new int[]{5, 10, 3};
         int element = 5;
         int result = FindLoop.indexOf(data, element);
         int expected = 0;
@@ -880,7 +879,7 @@ class FindLoopTest {
 
     @Test
     void whenArrayHas10Then10() {
-        int[] data = new int[] {5, 10, 3};
+        int[] data = new int[]{5, 10, 3};
         int element = 10;
         int result = FindLoop.indexOf(data, element);
         int expected = 1;
@@ -888,10 +887,9 @@ class FindLoopTest {
     }
 
 
-
     @Test
     void whenArrayHas20ThenMinus1() {
-        int[] data = new int[] {5, 10, 3};
+        int[] data = new int[]{5, 10, 3};
         int element = 20;
         int result = FindLoop.indexOf(data, element);
         int expected = -1;
@@ -944,6 +942,7 @@ class SwitchArrayTest {
         int[] expected = {4, 2, 3, 1};
         assertThat(result).containsExactly(expected);
     }
+
     @Test
     void whenSwap4to5() {
         int[] input = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
@@ -966,23 +965,22 @@ class SwitchArrayTest {
     }
 
 
-
 }
 
 class TurnTest {
     @Test
     void whenTurnArrayWithEvenAmountOfElementsThenTurnedArray() {
-        int[] input = new int[] {4, 1, 6, 2};
+        int[] input = new int[]{4, 1, 6, 2};
         int[] result = Turn.back(input);
-        int[] expected = new int[] {2, 6, 1, 4};
+        int[] expected = new int[]{2, 6, 1, 4};
         assertThat(result).containsExactly(expected);
     }
 
     @Test
     void whenTurnArrayWithOddAmountOfElementsThenTurnedArray() {
-        int[] input = new int[] {4, 1, 6, 2, 90};
+        int[] input = new int[]{4, 1, 6, 2, 90};
         int[] result = Turn.back(input);
-        int[] expected = new int[] {90, 2, 6, 1, 4};
+        int[] expected = new int[]{90, 2, 6, 1, 4};
         assertThat(result).containsExactly(expected);
     }
 }
@@ -991,28 +989,28 @@ class TurnTest {
 class CheckTest {
     @Test
     void whenDataMonoByTrueThenTrue() {
-        boolean[] data = new boolean[] {true, true, true};
+        boolean[] data = new boolean[]{true, true, true};
         boolean result = Check.mono(data);
         assertThat(result).isTrue();
     }
 
     @Test
     void whenDataNotMonoByTrueThenFalse() {
-        boolean[] data = new boolean[] {true, false, true};
+        boolean[] data = new boolean[]{true, false, true};
         boolean result = Check.mono(data);
         assertThat(result).isFalse();
     }
 
     @Test
     void whenDataMonoByFalseThenTrue() {
-        boolean[] data = new boolean[] {false, false, false};
+        boolean[] data = new boolean[]{false, false, false};
         boolean result = Check.mono(data);
         assertThat(result).isTrue();
     }
 
     @Test
     void whenDataNotMonoByFalseThenFalse() {
-        boolean[] data = new boolean[] {false, true, false};
+        boolean[] data = new boolean[]{false, true, false};
         boolean result = Check.mono(data);
         assertThat(result).isFalse();
     }
@@ -1059,38 +1057,38 @@ class EqualLastTest {
 class RollBackArrayTest {
     @Test
     public void whenEmpty() {
-        int[] input = new int[] {};
-        int[] expected = new int[] {};
+        int[] input = new int[]{};
+        int[] expected = new int[]{};
         int[] result = RollBackArray.rollback(input);
         assertThat(result).containsExactly(expected);
     }
 
     @Test
     public void whenOne() {
-        int[] input = new int[] {1};
-        int[] expected = new int[] {1};
+        int[] input = new int[]{1};
+        int[] expected = new int[]{1};
         int[] result = RollBackArray.rollback(input);
         assertThat(result).containsExactly(expected);
     }
 
     @Test
     public void whenFull() {
-        int[] input = new int[] {1, 2, 3, 4};
-        int[] expected = new int[] {4, 3, 2, 1};
+        int[] input = new int[]{1, 2, 3, 4};
+        int[] expected = new int[]{4, 3, 2, 1};
         int[] result = RollBackArray.rollback(input);
         assertThat(result).containsExactly(expected);
     }
 
     @Test
     public void whenTheSame() {
-        int[] input = new int[] {1, 1, 1, 1};
-        int[] expected = new int[] {1, 1, 1, 1};
+        int[] input = new int[]{1, 1, 1, 1};
+        int[] expected = new int[]{1, 1, 1, 1};
         int[] result = RollBackArray.rollback(input);
         assertThat(result).containsExactly(expected);
     }
 }
 
- class EndsWithTest {
+class EndsWithTest {
     @Test
     public void whenEndWithPrefixThenTrue() {
         char[] word = {'H', 'e', 'l', 'l', 'o'};
@@ -1109,11 +1107,10 @@ class RollBackArrayTest {
 }
 
 
-
 class FindLoopTest2 {
     @Test
     public void whenArrayHas5Then0() {
-        int[] data = new int[] {5, 10, 3};
+        int[] data = new int[]{5, 10, 3};
         int element = 5;
         int result = FindLoop.indexOf(data, element);
         int expected = 0;
@@ -1122,7 +1119,7 @@ class FindLoopTest2 {
 
     @Test
     public void whenDiapasonHas8ThenResultEqualFinish() {
-        int[] data = new int[] {5, 2, 10, 2, 4, 8, 14, 3, 21, 16};
+        int[] data = new int[]{5, 2, 10, 2, 4, 8, 14, 3, 21, 16};
         int element = 8;
         int start = 2;
         int finish = 5;
@@ -1133,7 +1130,7 @@ class FindLoopTest2 {
 
     @Test
     public void whenDiapasonHasSomeEqualElementThen3() {
-        int[] data = new int[] {5, 10, 2, 4, 8, 4, 14, 4, 3, 21, 16};
+        int[] data = new int[]{5, 10, 2, 4, 8, 4, 14, 4, 3, 21, 16};
         int element = 4;
         int start = 1;
         int finish = 8;
@@ -1144,7 +1141,7 @@ class FindLoopTest2 {
 
     @Test
     public void whenDiapasonHas2Then3() {
-        int[] data = new int[] {5, 2, 10, 2, 4};
+        int[] data = new int[]{5, 2, 10, 2, 4};
         int element = 2;
         int start = 2;
         int finish = 4;
@@ -1155,7 +1152,7 @@ class FindLoopTest2 {
 
     @Test
     public void whenDiapasonHasNot8ThenMinus1() {
-        int[] data = new int[] {5, 2, 10, 2, 4};
+        int[] data = new int[]{5, 2, 10, 2, 4};
         int element = 8;
         int start = 0;
         int finish = 4;
@@ -1166,11 +1163,10 @@ class FindLoopTest2 {
 }
 
 
-
 class MinTest {
     @Test
     public void whenFirstMin() {
-        int[] array = new int[] {0, 5, 10};
+        int[] array = new int[]{0, 5, 10};
         int result = Min.findMin(array);
         int expected = 0;
         assertThat(result).isEqualTo(expected);
@@ -1178,7 +1174,7 @@ class MinTest {
 
     @Test
     public void whenLastMin() {
-        int[] array = new int[] {10, 5, 3};
+        int[] array = new int[]{10, 5, 3};
         int result = Min.findMin(array);
         int expected = 3;
         assertThat(result).isEqualTo(expected);
@@ -1186,16 +1182,17 @@ class MinTest {
 
     @Test
     public void whenMiddleMin() {
-        int[] array = new int[] {10, 2, 5};
+        int[] array = new int[]{10, 2, 5};
         int result = Min.findMin(array);
         int expected = 2;
         assertThat(result).isEqualTo(expected);
     }
 }
+
 class MinDiapasonTest {
     @Test
     public void whenFirstMin() {
-        int[] array = new int[] {-1, 0, 5, 10};
+        int[] array = new int[]{-1, 0, 5, 10};
         int start = 1;
         int finish = 3;
         int result = MinDiapason.findMin(array, start, finish);
@@ -1205,7 +1202,7 @@ class MinDiapasonTest {
 
     @Test
     public void whenLastMin() {
-        int[] array = new int[] {10, 5, 3, 1};
+        int[] array = new int[]{10, 5, 3, 1};
         int start = 1;
         int finish = 3;
         int result = MinDiapason.findMin(array, start, finish);
@@ -1215,7 +1212,7 @@ class MinDiapasonTest {
 
     @Test
     public void whenMiddleMin() {
-        int[] array = new int[] {10, 2, 5, 1};
+        int[] array = new int[]{10, 2, 5, 1};
         int start = 0;
         int finish = 2;
         int result = MinDiapason.findMin(array, start, finish);
@@ -1227,9 +1224,9 @@ class MinDiapasonTest {
 class SortSelectedTest {
     @Test
     public void whenSort() {
-        int[] data = new int[] {3, 4, 1, 2, 5};
+        int[] data = new int[]{3, 4, 1, 2, 5};
         int[] result = SortSelected.sort(data);
-        int[] expected = new int[] {1, 2, 3, 4, 5};
+        int[] expected = new int[]{1, 2, 3, 4, 5};
         assertThat(result).containsExactly(expected);
     }
 }
@@ -1268,6 +1265,7 @@ class MatrixSumTest {
         assertThat(result).isEqualTo(expected);
     }
 }
+
 class SkipNegativeTest {
     @Test
     public void whenArrayRowAndColumnEquals() {
@@ -1341,6 +1339,7 @@ class MatrixCheckTest {
         boolean result = MatrixCheck.monoHorizontal(input, row);
         assertThat(result).isTrue();
     }
+
     @Test
     public void whenHasSoloHorizontal() {
         char[][] input = {
@@ -1352,6 +1351,7 @@ class MatrixCheckTest {
         boolean result = MatrixCheck.monoHorizontal(input, row);
         assertThat(result).isFalse();
     }
+
     @Test
     public void whenHasMonoVertical() {
         char[][] input = {
@@ -1375,9 +1375,6 @@ class MatrixCheckTest {
         boolean result = MatrixCheck.monoVertical(input, column);
         assertThat(result).isFalse();
     }
-
-
-
 
 
 }
@@ -1494,5 +1491,80 @@ class MachineTest {
         int[] result = Machine.change(money, price);
         int[] expected = {10, 5, 2, 1};
         assertThat(result).containsExactly(expected);
+    }
+}
+
+class SimpleStringEncoderTest {
+
+    @Test
+    void whenOnlyOne() {
+        String input = "a";
+        String expected = "a";
+        String result = SimpleStringEncoder.encode(input);
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void whenDoubleA() {
+        String input = "aa";
+        String expected = "a2";
+        String result = SimpleStringEncoder.encode(input);
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void whenStringaaabbcThenResulta3b2c() {
+        String input = "aaabbc";
+        String expected = "a3b2c";
+        String result = SimpleStringEncoder.encode(input);
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void whenStringabbcccThenResulta2b3c() {
+        String input = "abbccc";
+        String expected = "ab2c3";
+        String result = SimpleStringEncoder.encode(input);
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void whenStringaaabccThenResulta3bc2() {
+        String input = "aaabcc";
+        String expected = "a3bc2";
+        String result = SimpleStringEncoder.encode(input);
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void whenStringabcThenResultabc() {
+        String input = "abc";
+        String expected = "abc";
+        String result = SimpleStringEncoder.encode(input);
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void whenStringaaabbbcccThenResulta3b3c3() {
+        String input = "aaabbbccc";
+        String expected = "a3b3c3";
+        String result = SimpleStringEncoder.encode(input);
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void whenStringaaaaaaaaaaaabbbcddddThenResulta12b3cd4() {
+        String input = "aaaaaaaaaaaabbbcdddd";
+        String expected = "a12b3cd4";
+        String result = SimpleStringEncoder.encode(input);
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void whenStringaaabbbbaaabbcccdddddThenResulta3b4a3b2c3d5() {
+        String input = "aaabbbbaaabbcccddddd";
+        String expected = "a3b4a3b2c3d5";
+        String result = SimpleStringEncoder.encode(input);
+        assertThat(result).isEqualTo(expected);
     }
 }
