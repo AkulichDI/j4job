@@ -1,5 +1,6 @@
 package array;
 //6.7.2
+/* Пропустил 674      */
 public class MatrixCheck {
 
     public static boolean monoHorizontal(char[][] board, int row) {
@@ -35,7 +36,18 @@ public class MatrixCheck {
         }
         return result;
     }
-
+/*       Туплю с задачей
+    public static boolean isWin(char[][] board) {
+        boolean result = false;
+        for ( .. ) {
+            if ( .. ) {
+                result = true;
+                break;
+            }
+        }
+        return result;
+    }
+*/
 
 
 }
