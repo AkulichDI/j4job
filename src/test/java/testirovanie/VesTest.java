@@ -3,6 +3,7 @@ package testirovanie;
 import OperatorVetvlenia.*;
 import array.*;
 import cycle.*;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import static OperatorVetvlenia.MultipleSwitchWeek.numberOfDay;
@@ -31,17 +32,28 @@ class VesTest {
 }
 
 class PointTest {
+
+
+
     @Test
-    void when00to20then2() {
-        double expected = 2;
-        int x1 = 0;
-        int y1 = 0;
-        int x2 = 2;
-        int y2 = 0;
-        double output = Point.distance(x1, y1, x2, y2);
-        assertThat(output).isEqualTo(expected, withPrecision(0.01));
+    public void when00to20Then2() {
+        Point first = new Point(0,0);
+        Point second = new Point(2,0);
+        int expected = 2;
+        double out = first.distance(second);
+        Assertions.assertEquals(expected, out, 0.01);
     }
 
+    @Test
+    public void when12to34Then2() {
+        Point first = new Point(25, 0);
+        Point second = new Point(0, 30);
+        double expected = 39.051248379533273;
+        double out = first.distance(second);
+        Assertions.assertEquals(expected, out, 0.01);
+    }
+
+/*
     @Test
     void when0034to2then2() {
         double expected = 5;
@@ -75,7 +87,7 @@ class PointTest {
         assertThat(output).isEqualTo(expected, withPrecision(0.01));
     }
 
-
+*/
 }
 
 class RectangleAreaTest {

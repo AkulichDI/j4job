@@ -1,6 +1,10 @@
 package org.example.ru.job4j.calculator;
 
 public class Point {
+
+
+
+
     public static double distance(int x1, int y1, int x2, int y2) {
         double x21 = Math.pow( x2 - x1 , 2 );
         double y21 = Math.pow ( y2 - y1, 2 );
