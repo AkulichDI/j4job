@@ -150,6 +150,28 @@ class DummyBotTest {
 }
 
 class MaxTest {
+
+    @Test
+    void whenMaxTThen() {
+
+        int result = Max.max(100, 20,1);
+        int expected = 100;
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void whenMaxTThen10() {
+
+        int result = Max.max(100, 20,1, 8888);
+        int expected = 8888;
+        assertThat(result).isEqualTo(expected);
+    }
+
+
+
+
+
+
     @Test
     void whenMax1To2Then2() {
         int left = 1;
