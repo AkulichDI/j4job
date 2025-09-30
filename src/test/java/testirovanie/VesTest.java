@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import static OperatorVetvlenia.MultipleSwitchWeek.numberOfDay;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.assertj.core.api.BDDAssertions.withPrecision;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class VesTest {
 
@@ -36,12 +37,21 @@ class PointTest {
 
 
     @Test
+    void when3dDistanceBetweenPoints_thenCorrect() {
+        Point p1 = new Point(1, 2, 3);
+        Point p2 = new Point(4, 6, 8);
+
+        double expected = Math.sqrt(50);
+        assertEquals(expected, p1.distance3d(p2), 0.0001);
+    }
+
+    @Test
     public void when00to20Then2() {
         Point first = new Point(0,0);
         Point second = new Point(2,0);
         int expected = 2;
         double out = first.distance(second);
-        Assertions.assertEquals(expected, out, 0.01);
+        assertEquals(expected, out, 0.01);
     }
 
     @Test
@@ -50,7 +60,7 @@ class PointTest {
         Point second = new Point(0, 30);
         double expected = 39.051248379533273;
         double out = first.distance(second);
-        Assertions.assertEquals(expected, out, 0.01);
+        assertEquals(expected, out, 0.01);
     }
 
 /*
