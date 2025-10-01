@@ -17,6 +17,11 @@ public class mestizoTest {
         mestizoTest reduce = new mestizoTest();
         reduce.to(array);
         reduce.print();
+        StringBuilder staret = new StringBuilder("sdfdfd");
+        System.out.println(staret);
+        staret = staret.append("FDFDFDFD");
+        System.out.println(staret);
+
     }
 
 }
