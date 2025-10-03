@@ -16,8 +16,8 @@ public class Library {
         for (int i = 0; i < books.length; i++) {
 
             Book book = books[i];
-            System.out.println("Наименование книги: "  +  book.getName()+ "\t  Количество страниц: " + book.getCount());
-
+            System.out.printf("Наименование книги: %-20s Количество страниц: %d%n",
+                    book.getName(), book.getCount());
         }
 
         System.out.println("Перестановка 0 и 3 ");
