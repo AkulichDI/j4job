@@ -23,11 +23,19 @@ public class PhoneDictionary {
     public  ArrayList<Person> find (String key) {
         ArrayList<Person> result = new ArrayList<>();
         for ( Person person : persons ){
-            if (person.toString().contains(key)){
+            result.add(person);
+            /*if (person.toString().contains(key)){
                     result.add(person);
-            }
+            }*/
+
+            System.out.println(person.toString());
         }
         return result;
+    }
+
+    public static void main(String[] args) {
+        PhoneDictionary p = new PhoneDictionary();
+        System.out.println(p.find(""));
     }
 
 }
