@@ -30,3 +30,40 @@
     </dependencies>
 
 </project>
+
+
+docker exec -it redmine bash
+
+# 0) корень приложения (выберите тот, где есть Gemfile)
+cd /opt/redmine/redmine  || cd /opt/redmine
+
+# 1) убедимся, что подключаемся к НОВОЙ БД (правки в config/database.yml, секция production)
+# проверьте, что хост/БД/логин/пароль верные
+
+# 2) временно отключим плагины, чтобы инициализировать ядро
+mv plugins plugins.off 2>/dev/null || true
+mkdir -p plugins
+
+# 3) зависимости + миграции ядра
+gem install bundler --no-document || true
+export BUNDLE_IGNORE_CONFIG=1
+bundle config unset deployment || true
+bundle config unset frozen || true
+bundle config set path vendor/bundle
+bundle install --without development test
+
+# создаст ВСЕ базовые таблицы Redmine (включая settings)
+RAILS_ENV=production bundle exec rake db:migrate
+
+# (по желанию) загрузить справочники по умолчанию
+RAILS_ENV=production REDMINE_LANG=ru bundle exec rake redmine:load_default_data
+
+# 4) вернуть плагины и мигрировать их
+mv plugins.off/* plugins/ 2>/dev/null || true
+rmdir plugins.off 2>/dev/null || true
+bundle install --without development test
+RAILS_ENV=production bundle exec rake redmine:plugins:migrate
+
+# 5) ассеты и мягкий рестарт (если Passenger)
+bundle exec rake assets:precompile RAILS_ENV=production
+[ -d tmp ] && touch tmp/restart.txt || true
