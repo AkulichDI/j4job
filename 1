@@ -1,285 +1,181 @@
-/* ===================== ВСТАВЬТЕ CSV ЗДЕСЬ ===================== */
-/* Разделитель — запятая, ФИО — в первой колонке (0), формат LFM: Фамилия Имя Отчество.
- * Вставляйте порциями (например, по 200–250 строк) и запускайте скрипт. */
-def CSV_TEXT = $/
-Иванов Иван Иванович,любой,мусор
-/$
+// <![CDATA[
+/*! UTF8 */ 
+/*& 3600 */
 
-/* ===================== ПАРАМЕТРЫ ===================== */
-char DELIM   = ','          // разделитель в CSV
-int  FIO_COL = 0            // индекс колонки с ФИО
-boolean DRY_RUN  = true     // сначала true; для реальных изменений -> false
-long    SLEEP_MS = 0        // пауза между edit (мс), если нужно снизить нагрузку
+// Флажок симуляции (true = только логируем действия, без изменений)
+def DRY_RUN = true
 
-// приоритет назначения: сначала подразделение (OU), потом команда (team)
-List<String> TARGET_PRIORITY = ['ou','team']
+// Вставьте CSV-текст в виде многострочной строки.
+// Формат: Фамилия,Имя,Отчество (остальные столбцы игнорируются, разделитель – запятая).
+def csvText = """
+Иванов,Иван,Иванович, ...
+Петров,Пётр,Петрович, ...
+Сидоров,Сидор,Сидорович, ...
+"""
 
-// где и по каким связям искать связанные объекты
-List<String> CLASSES   = ['serviceCall','task']   // при необходимости: 'changeRequest','problem'
-List<String> REL_ATTRS = [
-  'responsibleEmployee','executor','assignee','author',
-  'clientEmployee','initiator','manager','observer'
-]
-
-// поля назначения (перебираем — что реально есть в вашей конфигурации)
-List<String> OU_TARGET_FIELDS   = ['responsibleOu','ou']
-List<String> TEAM_TARGET_FIELDS = ['responsibleTeam','team','executorTeam']
-
-// статусы, которые НЕ трогаем
-Set<String> SKIP_STATUS_CODES  = ['resolved','closed','canceled','cancelled','done','completed'] as Set
-Set<String> SKIP_STATUS_TITLES = ['разрешен','разрешено','закрыт','закрыто','отклонен','выполнен','решено'] as Set
-
-// ограничители, чтобы «не положить» среду
-int MAX_EDITS_PER_EMPLOYEE = 500
-int MAX_TOTAL_EDITS        = 20000
-
-/* ===================== УТИЛИТЫ (лог, транзакции, парсинг) ===================== */
-// логгер + отчёт (вернём в окно консоли)
-def log = (this.metaClass.hasProperty(this,'logger') ? logger :
-  [info:{Object m->println(m)}, warn:{Object m->println(m)}, error:{Object m->println(m)}])
-def report = new StringBuilder()
-def say = { String level, String msg ->
-  report.append(msg).append('\n')
-  try {
-    if (level=='i') log.info(msg)
-    else if (level=='w') log.warn(msg)
-    else log.error(msg)
-  } catch(ignore){}
-}
-def sleepIfNeeded = { if (SLEEP_MS > 0) Thread.sleep(SLEEP_MS) }
-def inTx = { Closure c ->    // транзакция, если доступна
-  if (this.metaClass.hasProperty(this,'api') && api?.tx) return api.tx.call { c.call() }
-  return c.call()
+// Преобразуем CSV в список ФИО
+def names = []
+csvText.trim().readLines().each { line ->
+    if (!line.trim()) return
+    def cols = line.split(',') as List
+    // Берём только первую колонку (Фамилия Имя Отчество) и удаляем возможные кавычки/пробелы
+    def fio = cols[0].trim()
+    if (fio) names << fio
 }
 
-// CSV-сплит строки (учёт кавычек и "" внутри)
-def splitCsv = { String line ->
-  def out = []; def sb = new StringBuilder(); boolean inQ = false
-  for (int i = 0; i < line.size(); i++) {
-    char ch = line.charAt(i)
-    if (ch == '"') {
-      if (inQ && i+1 < line.size() && line.charAt(i+1) == '"') { sb << '"'; i++ }
-      else { inQ = !inQ }
-      continue
-    }
-    if (ch == DELIM && !inQ) { out << sb.toString().trim(); sb.setLength(0) }
-    else { sb << ch }
-  }
-  out << sb.toString().trim(); out
-}
-
-// массив ТОЛЬКО из ФИО-строк (берём первые 3 слова 1-й колонки)
-def buildFioList = { String csvText ->
-  csvText.readLines()
-    .findAll { it?.trim() && !it.trim().startsWith('#') && !it.trim().startsWith('//') }
-    .collect { line ->
-      def cols = splitCsv(line)
-      def cell = cols.size() > FIO_COL ? cols[FIO_COL] : ''
-      def words = cell?.replace('\u00A0',' ')?.trim()?.replaceAll(/\s+/, ' ')?.tokenize(' ') ?: []
-      words.take(3).join(' ') // LFM строка
-    }
-    .findAll { it && it.split(/\s+/).size() >= 2 }
-}
-
-/* ===================== ПОИСК СОТРУДНИКА ПО ФИО (LFM) ===================== */
-def ENABLE_DEBUG_FIND = true
-def sayDbg = { String s -> if (ENABLE_DEBUG_FIND) report.append("[FIND] ").append(s).append('\n') }
-
-def normFio = { String s ->
-  (s ?: '')
-    .replace('\u00A0',' ')       // неразрывный пробел -> обычный
-    .replaceAll(/\s+/, ' ')      // схлопнуть пробелы
-    .replace('ё','е').replace('Ё','Е')
-    .trim()
-}
-def toObj = { any -> (any instanceof String) ? utils.get(any) : any }
-def toObjList = { lst -> (lst ?: []).collect { toObj(it) } }
-
-def findEmployeeByFio = { String fioInput ->
-  try {
-    def fio = normFio(fioInput)
-    if (!fio) return null
-
-    // 1) по title (точно / LIKE) — часто title = "Фамилия Имя Отчество"
-    def byTitleExact = utils.find('employee', [title: fio], sp.ignoreCase())
-    if (byTitleExact?.size() == 1) return toObj(byTitleExact[0])
-
-    def byTitleLike  = utils.find('employee', [title: op.like('%' + fio + '%')], sp.ignoreCase())
-    if (byTitleLike?.size() == 1)  return toObj(byTitleLike[0])
-
-    // 2) разбор LFM: Фамилия, Имя, [Отчество]
-    def p = fio.tokenize(' ')
-    String last   = p.size() >= 1 ? p[0] : null
-    String first  = p.size() >= 2 ? p[1] : null
-    String middle = p.size() >= 3 ? p[2] : null
-    if (!last || !first) {
-      sayDbg("Недостаточно частей для ФИО (ожидаю Фамилия Имя [Отчество]): '${fio}'")
-      return null
-    }
-
-    // 3) по трём полям LIKE (вайлдкард + игнор регистра)
-    List found = []
-    if (middle) {
-      found = utils.find('employee',
-        [lastName:   op.like('%' + last   + '%'),
-         firstName:  op.like('%' + first  + '%'),
-         middleName: op.like('%' + middle + '%')],
-        sp.ignoreCase())
-      if (found?.size() == 1) return toObj(found[0])
-    }
-
-    // 4) по двум полям (без отчества)
-    found = utils.find('employee',
-      [lastName:  op.like('%' + last  + '%'),
-       firstName: op.like('%' + first + '%')],
-      sp.ignoreCase())
-    if (found?.size() == 1) return toObj(found[0])
-
-    // 5) если кандидатов несколько — точное совпадение по title
-    List objs = toObjList(found)
-    def exactTitle = objs.find { normFio(it?.title ?: '')?.equalsIgnoreCase(fio) }
-    if (exactTitle) return exactTitle
-
-    // 6) широкий поиск по фамилии + фильтр по имени/отчеству
-    def byLastOnly = utils.find('employee', [lastName: op.like('%' + last + '%')], sp.ignoreCase())
-    List wides = toObjList(byLastOnly).findAll { e ->
-      def t = normFio(e?.title ?: '')
-      t.toLowerCase().contains(first.toLowerCase()) &&
-      (!middle || t.toLowerCase().contains(middle.toLowerCase()))
-    }
-    if (wides?.size() == 1) return wides[0]
-
-    // 7) диагностика кандидатов (в отчёт)
-    if (ENABLE_DEBUG_FIND) {
-      def cand = (objs ?: toObjList(byTitleLike ?: byLastOnly)).take(10)
-      if (cand) sayDbg("Кандидаты для '${fio}': " + cand.collect { it?.title ?: it }.join(' | '))
-      else      sayDbg("Кандидатов не найдено для '${fio}'")
-    }
-    return null
-  } catch (Throwable t) {
-    if (ENABLE_DEBUG_FIND) sayDbg("Ошибка поиска '${fioInput}': ${t.message}")
-    return null
-  }
-}
-
-/* ===================== НАЗНАЧЕНИЕ ЦЕЛИ (OU/team из профиля) ===================== */
-def getStatusInfo = { obj ->
-  def code  = (obj?.status?.code ?: obj?.state?.code ?: obj?.stage?.code ?: '')?.toString()?.toLowerCase()
-  def title = (obj?.status?.title ?: obj?.state?.title ?: obj?.stage?.title ?: '')?.toString()?.toLowerCase()
-  [code, title]
-}
-def pickTarget = { emp ->
-  for (p in TARGET_PRIORITY) {
-    if (p == 'ou'   && emp?.ou?.UUID)   return [emp.ou.UUID,   OU_TARGET_FIELDS,   'ou']
-    if (p == 'team' && emp?.team?.UUID) return [emp.team.UUID, TEAM_TARGET_FIELDS, 'team']
-  }
-  return [null, null, null]
-}
-def alreadyAssignedTo = { obj, String field, String targetUuid ->
-  try {
-    def v = obj."${field}"
-    def currentUuid = (v?.UUID ?: (v instanceof String ? v : null))?.toString()
-    return currentUuid && currentUuid == targetUuid
-  } catch (Throwable ignore) { return false }
-}
-def tryAssign = { obj, List<String> fields, String targetUuid ->
-  for (f in fields) {
-    try {
-      if (alreadyAssignedTo(obj, f, targetUuid)) return false
-      if (DRY_RUN) { say('i', "DRY: ${obj.UUID} -> ${f} := ${targetUuid}"); return true }
-      inTx { utils.edit(obj, [(f): targetUuid]) }
-      return true
-    } catch (Throwable ignore) { /* поле может отсутствовать — пробуем следующее */ }
-  }
-  return false
-}
-
-/* ===================== ОСНОВНОЙ ПРОЦЕСС ===================== */
-def fioList = buildFioList(CSV_TEXT)
-say('i', "ФИО из CSV: ${fioList.size()}")
-
-int processed = 0, changed = 0, notFound = 0, skippedResolved = 0
-int totalEdits = 0
-int licenseChangedCount = 0
+int employeesProcessed = 0
+int tasksReassigned = 0
+int licensesChanged = 0
 def notFoundList = []
-def licenseChangedList = []
 
-fioList.each { fio ->
-  if (totalEdits >= MAX_TOTAL_EDITS) { say('w', "Достигнут общий лимит правок ${MAX_TOTAL_EDITS}, остановка"); return }
+// Предопределённый набор статус-кодов завершённых задач
+def closedStatuses = ['resolved','closed','done','разрешено','закрыто'] as Set
 
-  def emp = findEmployeeByFio(fio)
-  if (!emp) { notFound++; notFoundList << fio; say('w', "Сотрудник не найден: ${fio}"); return }
-  processed++
-
-  def (targetUuid, targetFields, targetKind) = pickTarget(emp)
-  if (!targetUuid || !targetFields) say('w', "Нет OU/Team у ${emp.title} — переназначения пропущены")
-
-  // собрать уникальные связанные объекты (приводим к объектам на всякий случай)
-  def seen = new HashSet<String>()
-  def related = []
-  CLASSES.each { cls ->
-    REL_ATTRS.each { ra ->
-      try {
-        def objs = utils.find(cls, [(ra): emp])
-        objs?.each { any ->
-          def o = toObj(any)
-          if (o?.UUID && seen.add(o.UUID)) related << o
+names.each { fullName ->
+    // Разбиваем ФИО на части, убирая лишние пробелы
+    def parts = fullName.split(/\s+/)
+    if (parts.size() < 2) {
+        // Некорректное ФИО
+        logger.warn("Невозможно разобрать ФИО: ${fullName}")
+        notFoundList << fullName
+        return
+    }
+    def lastName = parts[0]
+    def firstName = parts.size()>1 ? parts[1] : ""
+    def middleName = parts.size()>2 ? parts[2] : ""
+    // Собираем паттерны для поиска с учётом регистра
+    // Используем op.like для поиска по вхождению (см. пример использования op.like1)
+    def searchParams = [:]
+    searchParams['lastName'] = op.like(lastName)
+    if (firstName)  searchParams['firstName'] = op.like(firstName)
+    if (middleName) searchParams['middleName'] = op.like(middleName)
+    // Параметр title учитывает полное ФИО
+    searchParams['title'] = op.like(fullName)
+    // Выполняем поиск сотрудников (регистр зависит от БД, см. комментарий выше)
+    def emps = utils.find('employee', searchParams)
+    if (!emps) {
+        logger.info("Сотрудник не найден: ${fullName}")
+        notFoundList << fullName
+        return
+    }
+    // Если найдено несколько сотрудников, берём всех
+    emps.each { emp ->
+        employeesProcessed++
+        // Получаем OU (отдел) и первую команду сотрудника (если есть)
+        // Предполагаем, что emp.parent либо emp.ou даёт отдел, emp.teams – список команд
+        def ouObj = null, teamObj = null
+        if (emp.metaClass.hasProperty(emp, 'parent')) {
+            ouObj = emp.parent    // возможно null, если нет отдела
         }
-      } catch (Throwable ignore) { /* связь/класс может отсутствовать — ок */ }
-    }
-  }
-
-  say('i', "Сотрудник: ${emp.title} (${emp.UUID}) — связанных объектов: ${related.size()}")
-
-  int editsForEmp = 0
-  if (targetUuid && targetFields) {
-    related.each { o ->
-      if (editsForEmp >= MAX_EDITS_PER_EMPLOYEE || totalEdits >= MAX_TOTAL_EDITS) return
-
-      def (sc, st) = getStatusInfo(o)
-      if ((sc && SKIP_STATUS_CODES.contains(sc)) || (st && SKIP_STATUS_TITLES.contains(st))) {
-        skippedResolved++; return
-      }
-
-      try {
-        def ok = tryAssign(o, targetFields, targetUuid)
-        if (!ok) {
-          def altUuid   = (targetKind == 'ou') ? emp?.team?.UUID : emp?.ou?.UUID
-          def altFields = (targetKind == 'ou') ? TEAM_TARGET_FIELDS : OU_TARGET_FIELDS
-          if (altUuid) ok = tryAssign(o, altFields, altUuid)
+        if (emp.metaClass.hasProperty(emp, 'teams')) {
+            // команды – это коллекция. Берём первую, если есть
+            teamObj = (emp.teams ?: [])[0]
         }
-        if (ok) { editsForEmp++; totalEdits++; sleepIfNeeded() }
-      } catch (Throwable t) {
-        say('e', "Ошибка при назначении ${o?.UUID}: ${t.message}")
-      }
+        // Ищем все задачи (serviceCall и task) по атрибутам, связанным с этим сотрудником
+        def tasks = []
+        // Задачи типа serviceCall, связанные с сотрудником
+        tasks += utils.find('serviceCall', ['author': emp])
+        tasks += utils.find('serviceCall', ['executor': emp])        // если есть такое поле
+        tasks += utils.find('serviceCall', ['responsibleEmployee': emp]) // если есть
+        // Задачи типа task, связанные с сотрудником
+        tasks += utils.find('task', ['author': emp])
+        tasks += utils.find('task', ['executor': emp])
+        tasks += utils.find('task', ['responsibleEmployee': emp])
+        // Убираем дубликаты
+        tasks = tasks.unique()
+        // Обрабатываем найденные задачи
+        int countPerEmp = 0
+        for (task in tasks) {
+            // Проверяем статус задачи: если он в списке завершённых, пропустить
+            def state = task.state?.code?.toString()?.toLowerCase()
+            if (state in closedStatuses) continue
+            // Проверяем, не назначена ли задача уже на отдел/команду (т.е. нет конкретного ответственного сотрудника)
+            // Предполагаем: если у задачи нет responsibleEmployee, значит она на OU/Team
+            def hasEmp = task.metaClass.hasProperty(task, 'responsibleEmployee') ? task.responsibleEmployee : null
+            if (!hasEmp) {
+                // У задачи нет назначенного сотрудника – считаем её уже отданной отделу или команде
+                continue
+            }
+            // Если лимит задач по сотруднику превышен – выходим
+            if (countPerEmp >= 500) {
+                logger.warn("Достигнут лимит 500 задач для сотрудника ${fullName}, остальные задачи пропущены")
+                break
+            }
+            // Определяем, куда переназначить: на отдел (ou), если он есть, иначе на команду (team)
+            String targetCode = null
+            if (ouObj) {
+                // Предполагаем, что ouObj имеет формат класса "ou" – например ou$12345
+                targetCode = ouObj.toString()
+                // Переназначаем через аггрегированное изменение ответственного на отдел2
+                def attrs = ['aggrAttr': [targetCode]]
+                if (!DRY_RUN) {
+                    try {
+                        api.tx.call {
+                            utils.edit(task, attrs)
+                        }
+                    } catch (e) {
+                        logger.error("Ошибка переназначения задачи ${task} на отдел ${ouObj}: " + e)
+                    }
+                } else {
+                    logger.info("[DRY_RUN] Переназначение задачи ${task} на отдел: ${targetCode}")
+                }
+            } else if (teamObj) {
+                // Если отдела нет, используем команду
+                targetCode = teamObj.toString()
+                // Переназначаем ответственным – команду3
+                def attrs = ['responsible': [targetCode]]
+                if (!DRY_RUN) {
+                    try {
+                        api.tx.call {
+                            utils.edit(task, attrs)
+                        }
+                    } catch (e) {
+                        logger.error("Ошибка переназначения задачи ${task} на команду ${teamObj}: " + e)
+                    }
+                } else {
+                    logger.info("[DRY_RUN] Переназначение задачи ${task} на команду: ${targetCode}")
+                }
+            } else {
+                // У сотрудника нет ни отдела, ни команды – пропускаем
+                logger.warn("У сотрудника ${fullName} нет поля ou или команды для переназначения задачи ${task}")
+                continue
+            }
+            countPerEmp++
+            tasksReassigned++
+        }
+        // После задач – проверяем лицензию сотрудника
+        // Предполагаем, что emp.license возвращает список строк-кодов лицензий
+        def currentLic = emp.license ? emp.license.toString() : ""
+        if (currentLic && !currentLic.contains('notLicensed')) {
+            if (!DRY_RUN) {
+                try {
+                    api.tx.call {
+                        // Устанавливаем единственную лицензию notLicensed
+                        utils.edit(emp, ['license': ['notLicensed']])
+                    }
+                } catch (e) {
+                    logger.error("Ошибка снятия лицензии у ${fullName}: " + e)
+                }
+            } else {
+                logger.info("[DRY_RUN] Снятие лицензии у сотрудника ${fullName} (установить notLicensed)")
+            }
+            licensesChanged++
+        }
+        // Общий лимит изменений
+        if (tasksReassigned >= 20000) {
+            logger.warn("Достигнут общий лимит 20000 изменений, прекращаем обработку")
+            break
+        }
     }
-  }
-
-  // смена лицензии → notLicensed (только если действительно меняется)
-  try {
-    def cur = emp?.license
-    boolean already = false
-    if (cur instanceof String)            already = cur.equalsIgnoreCase('notLicensed')
-    else if (cur?.code)                  already = cur.code.toString().equalsIgnoreCase('notLicensed')
-    else if (cur?.title)                 already = cur.title.toString().toLowerCase().contains('нелиценз')
-
-    if (!already) {
-      if (DRY_RUN) { say('i', "DRY: ${emp.title} license: ${cur} -> notLicensed"); licenseChangedCount++; licenseChangedList << emp.title }
-      else { inTx { utils.edit(emp, [license: 'notLicensed']) }; licenseChangedCount++; licenseChangedList << emp.title }
-    }
-  } catch (Throwable t) {
-    say('e', "Не удалось установить license=notLicensed для ${emp.title}: ${t.message}")
-  }
-
-  changed += editsForEmp
+    // Если общий лимит достигнут, выходим из цикла сотрудников
+    if (tasksReassigned >= 20000) break
 }
 
-// ИТОГИ (в окно консоли и в лог)
-say('i', "ГОТОВО: сотрудников обработано=${processed}, не найдены=${notFound}, " +
-         "объектов переназначено≈${changed}, пропущено (закрытые)=${skippedResolved}, totalEdits=${totalEdits}")
-say('i', "ЛИЦЕНЗИЙ установлено на notLicensed: ${licenseChangedCount} " +
-         (DRY_RUN ? "(DRY RUN — без реальных изменений)" : "(реально изменено)"))
-if (notFoundList)        say('w', "Не найдены: " + notFoundList.join('; '))
-if (licenseChangedList)  say('i', "Кому сменили лицензию: " + licenseChangedList.join('; '))
-
-return report.toString()
+def summary = """Сотрудников обработано: ${employeesProcessed}
+Задач переназначено: ${tasksReassigned}
+Лицензий изменено: ${licensesChanged}
+Не найдены сотрудники (ФИО): ${notFoundList.join(', ')}
+"""
+// Возвращаем итоговый лог (выводится в консоли)4.
+return summary
+// ]]>
