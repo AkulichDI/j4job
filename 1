@@ -1,10 +1,92 @@
-def fioList = lines
-  .findAll { it?.trim() && !it.trim().startsWith('#') && !it.trim().startsWith('//') }
-  .collect { line ->
-    def cols = splitCsv(line)                  // ваш сплиттер остаётся тем же
-    def fioParts = (cols.size() > FIO_COL ? cols[FIO_COL] : '').trim().tokenize(/\s+/)
-    fioParts.take(3).join(' ')                 // ← только строка ФИО
-  }
-  .findAll { it && it.split(/\s+/).size() >= 2 } // фильтр мусора
+// Определение CSV-данных как многострочных литералов
+def PART1 = $/Иванов Иван Иванович,ou$1001,team$2001
+Петров Петр Петрович,ou$1002,
+$/  // конец PART1
+def PART2 = $/Сидоров Сидор Сидорович,ou$1003,team$2002/$.stripIndent()
 
-return fioList
+// Сборка полного текста CSV
+String csvText = PART1 + '\n' + PART2
+
+// Разбиение на строки и извлечение ФИО (первые 3 слова первой колонки)
+def fioList = []
+csvText.readLines().each { line ->
+    if (!line.trim()) return
+    def cols = line.split(',')
+    def nameParts = cols[0].split(/\s+/)
+    if (nameParts.size() >= 3) {
+        fioList << "${nameParts[0]} ${nameParts[1]} ${nameParts[2]}"
+    }
+}
+
+// Статистика
+def stats = [processedEmployees:0, reassignedTasks:0, skippedTasks:0, licensedChanged:0]
+
+// Основной цикл по сотрудникам
+fioList.each { fullName ->
+    // Разбить ФИО на компоненты
+    def parts = fullName.split(/\s+/)
+    def lastName = parts[0], firstName = parts[1], patronymic = parts[2]
+    
+    // Найти сотрудника по фамилии (или по полной ФИО, если есть метод поиска)
+    def emps = utils.find('employee', ["lastName": lastName])
+    if (!emps || emps.size() != 1) {
+        logger.warn("Сотрудник с ФИО '${fullName}' не найден или найдено несколько.")
+        return
+    }
+    def employee = utils.get(emps[0])
+    stats.processedEmployees++
+    
+    // Извлечь OU и team из той же строки CSV (если есть дополнительные колонки)
+    def row = csvText.readLines().find{ it.startsWith(lastName + ' ' + firstName) }
+    def cols = row.split(',')
+    def ouCode = cols.size() > 1 ? cols[1] : null
+    def teamCode = cols.size() > 2 ? cols[2] : null
+    
+    // Назначение OU/команды сотруднику (пример)
+    if (ouCode) {
+        def ouObj = utils.get(ouCode)  // предполагается, что ouCode — это UUID вида 'ou$...'
+        if (ouObj) utils.edit(employee, ["ou": ouObj])
+    }
+    if (teamCode) {
+        def teamObj = utils.get(teamCode)  // 'team$...'
+        if (teamObj) utils.edit(employee, ["teams": [teamObj]])
+    }
+    
+    // Переназначение связанных задач/заявок (задачи сервиса serviceCall)
+    def tasks = utils.find('serviceCall', ["responsible": employee])
+    tasks.each { taskUuid ->
+        def task = utils.get(taskUuid)
+        // Получить текущий код статуса
+        def lastStateEvt = utils.lastState(task)
+        def currentState = lastStateEvt?.newStateCode
+        // Проверить, не завершён ли объект (например, 'closed' или 'done')
+        if (currentState == 'closed' || currentState == 'done') {
+            stats.skippedTasks++
+            return
+        }
+        // Переназначить задачу (например, на OU или команду)
+        try {
+            api.tx.call {
+                // Пример: переназначаем ответственного (null здесь просто пример)
+                def errors = utils.setResponsible(task, null, null)
+                if (!errors.isEmpty()) {
+                    logger.error("Ошибка при назначении ответственного для ${task.UUID}: " + errors)
+                }
+            }
+            stats.reassignedTasks++
+        } catch (Exception e) {
+            logger.error("Ошибка при переназначении задачи ${task.UUID}: " + e.getMessage(), e)
+        }
+    }
+    
+    // Перевод лицензии в notLicensed (если необходимо)
+    if (employee.licensed != 'notLicensed') {
+        utils.edit(employee, ["licensed": "notLicensed"])
+        stats.licensedChanged++
+    }
+}
+
+// Логирование статистики
+logger.info("Сотрудников найдено и обработано: ${stats.processedEmployees}")
+logger.info("Задач переназначено: ${stats.reassignedTasks}, пропущено (завершённых): ${stats.skippedTasks}")
+logger.info("Сотрудников переведено в notLicensed: ${stats.licensedChanged}")
