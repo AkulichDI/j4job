@@ -1,181 +1,120 @@
-// <![CDATA[
-/*! UTF8 */ 
-/*& 3600 */
+/* ===================== ДОБАВИТЬ ПОСЛЕ УТИЛИТ (после строки ~60) ===================== */
 
-// Флажок симуляции (true = только логируем действия, без изменений)
-def DRY_RUN = true
-
-// Вставьте CSV-текст в виде многострочной строки.
-// Формат: Фамилия,Имя,Отчество (остальные столбцы игнорируются, разделитель – запятая).
-def csvText = """
-Иванов,Иван,Иванович, ...
-Петров,Пётр,Петрович, ...
-Сидоров,Сидор,Сидорович, ...
-"""
-
-// Преобразуем CSV в список ФИО
-def names = []
-csvText.trim().readLines().each { line ->
-    if (!line.trim()) return
-    def cols = line.split(',') as List
-    // Берём только первую колонку (Фамилия Имя Отчество) и удаляем возможные кавычки/пробелы
-    def fio = cols[0].trim()
-    if (fio) names << fio
+// Нормализация UUID в формат Naumen SD 4.17
+def normalizeUuid = { obj, String fqn ->
+  if (!obj?.UUID) return null
+  def uuid = obj.UUID.toString()
+  
+  // Если уже есть префикс — возвращаем как есть
+  if (uuid.contains('$')) return uuid
+  
+  // Добавляем префикс на основе метакласса
+  def prefix = fqn ?: (obj?.metaClass ? obj.metaClass.toString() : null)
+  if (!prefix) return uuid  // если не удалось определить — возвращаем как есть
+  
+  // Извлекаем короткое имя класса (ou, team, employee и т.д.)
+  def shortName = prefix.tokenize('.')[-1]?.toLowerCase()
+  return "${shortName}$${uuid}"
 }
 
-int employeesProcessed = 0
-int tasksReassigned = 0
-int licensesChanged = 0
-def notFoundList = []
+/* ===================== ИЗМЕНИТЬ pickTarget (строка ~170) ===================== */
 
-// Предопределённый набор статус-кодов завершённых задач
-def closedStatuses = ['resolved','closed','done','разрешено','закрыто'] as Set
-
-names.each { fullName ->
-    // Разбиваем ФИО на части, убирая лишние пробелы
-    def parts = fullName.split(/\s+/)
-    if (parts.size() < 2) {
-        // Некорректное ФИО
-        logger.warn("Невозможно разобрать ФИО: ${fullName}")
-        notFoundList << fullName
-        return
+def pickTarget = { emp ->
+  for (p in TARGET_PRIORITY) {
+    if (p == 'ou' && emp?.ou?.UUID) {
+      def ouUuid = normalizeUuid(emp.ou, 'ou')
+      if (ouUuid) return [ouUuid, OU_TARGET_FIELDS, 'ou']
     }
-    def lastName = parts[0]
-    def firstName = parts.size()>1 ? parts[1] : ""
-    def middleName = parts.size()>2 ? parts[2] : ""
-    // Собираем паттерны для поиска с учётом регистра
-    // Используем op.like для поиска по вхождению (см. пример использования op.like1)
-    def searchParams = [:]
-    searchParams['lastName'] = op.like(lastName)
-    if (firstName)  searchParams['firstName'] = op.like(firstName)
-    if (middleName) searchParams['middleName'] = op.like(middleName)
-    // Параметр title учитывает полное ФИО
-    searchParams['title'] = op.like(fullName)
-    // Выполняем поиск сотрудников (регистр зависит от БД, см. комментарий выше)
-    def emps = utils.find('employee', searchParams)
-    if (!emps) {
-        logger.info("Сотрудник не найден: ${fullName}")
-        notFoundList << fullName
-        return
+    if (p == 'team' && emp?.team?.UUID) {
+      def teamUuid = normalizeUuid(emp.team, 'team')
+      if (teamUuid) return [teamUuid, TEAM_TARGET_FIELDS, 'team']
     }
-    // Если найдено несколько сотрудников, берём всех
-    emps.each { emp ->
-        employeesProcessed++
-        // Получаем OU (отдел) и первую команду сотрудника (если есть)
-        // Предполагаем, что emp.parent либо emp.ou даёт отдел, emp.teams – список команд
-        def ouObj = null, teamObj = null
-        if (emp.metaClass.hasProperty(emp, 'parent')) {
-            ouObj = emp.parent    // возможно null, если нет отдела
-        }
-        if (emp.metaClass.hasProperty(emp, 'teams')) {
-            // команды – это коллекция. Берём первую, если есть
-            teamObj = (emp.teams ?: [])[0]
-        }
-        // Ищем все задачи (serviceCall и task) по атрибутам, связанным с этим сотрудником
-        def tasks = []
-        // Задачи типа serviceCall, связанные с сотрудником
-        tasks += utils.find('serviceCall', ['author': emp])
-        tasks += utils.find('serviceCall', ['executor': emp])        // если есть такое поле
-        tasks += utils.find('serviceCall', ['responsibleEmployee': emp]) // если есть
-        // Задачи типа task, связанные с сотрудником
-        tasks += utils.find('task', ['author': emp])
-        tasks += utils.find('task', ['executor': emp])
-        tasks += utils.find('task', ['responsibleEmployee': emp])
-        // Убираем дубликаты
-        tasks = tasks.unique()
-        // Обрабатываем найденные задачи
-        int countPerEmp = 0
-        for (task in tasks) {
-            // Проверяем статус задачи: если он в списке завершённых, пропустить
-            def state = task.state?.code?.toString()?.toLowerCase()
-            if (state in closedStatuses) continue
-            // Проверяем, не назначена ли задача уже на отдел/команду (т.е. нет конкретного ответственного сотрудника)
-            // Предполагаем: если у задачи нет responsibleEmployee, значит она на OU/Team
-            def hasEmp = task.metaClass.hasProperty(task, 'responsibleEmployee') ? task.responsibleEmployee : null
-            if (!hasEmp) {
-                // У задачи нет назначенного сотрудника – считаем её уже отданной отделу или команде
-                continue
-            }
-            // Если лимит задач по сотруднику превышен – выходим
-            if (countPerEmp >= 500) {
-                logger.warn("Достигнут лимит 500 задач для сотрудника ${fullName}, остальные задачи пропущены")
-                break
-            }
-            // Определяем, куда переназначить: на отдел (ou), если он есть, иначе на команду (team)
-            String targetCode = null
-            if (ouObj) {
-                // Предполагаем, что ouObj имеет формат класса "ou" – например ou$12345
-                targetCode = ouObj.toString()
-                // Переназначаем через аггрегированное изменение ответственного на отдел2
-                def attrs = ['aggrAttr': [targetCode]]
-                if (!DRY_RUN) {
-                    try {
-                        api.tx.call {
-                            utils.edit(task, attrs)
-                        }
-                    } catch (e) {
-                        logger.error("Ошибка переназначения задачи ${task} на отдел ${ouObj}: " + e)
-                    }
-                } else {
-                    logger.info("[DRY_RUN] Переназначение задачи ${task} на отдел: ${targetCode}")
-                }
-            } else if (teamObj) {
-                // Если отдела нет, используем команду
-                targetCode = teamObj.toString()
-                // Переназначаем ответственным – команду3
-                def attrs = ['responsible': [targetCode]]
-                if (!DRY_RUN) {
-                    try {
-                        api.tx.call {
-                            utils.edit(task, attrs)
-                        }
-                    } catch (e) {
-                        logger.error("Ошибка переназначения задачи ${task} на команду ${teamObj}: " + e)
-                    }
-                } else {
-                    logger.info("[DRY_RUN] Переназначение задачи ${task} на команду: ${targetCode}")
-                }
-            } else {
-                // У сотрудника нет ни отдела, ни команды – пропускаем
-                logger.warn("У сотрудника ${fullName} нет поля ou или команды для переназначения задачи ${task}")
-                continue
-            }
-            countPerEmp++
-            tasksReassigned++
-        }
-        // После задач – проверяем лицензию сотрудника
-        // Предполагаем, что emp.license возвращает список строк-кодов лицензий
-        def currentLic = emp.license ? emp.license.toString() : ""
-        if (currentLic && !currentLic.contains('notLicensed')) {
-            if (!DRY_RUN) {
-                try {
-                    api.tx.call {
-                        // Устанавливаем единственную лицензию notLicensed
-                        utils.edit(emp, ['license': ['notLicensed']])
-                    }
-                } catch (e) {
-                    logger.error("Ошибка снятия лицензии у ${fullName}: " + e)
-                }
-            } else {
-                logger.info("[DRY_RUN] Снятие лицензии у сотрудника ${fullName} (установить notLicensed)")
-            }
-            licensesChanged++
-        }
-        // Общий лимит изменений
-        if (tasksReassigned >= 20000) {
-            logger.warn("Достигнут общий лимит 20000 изменений, прекращаем обработку")
-            break
-        }
-    }
-    // Если общий лимит достигнут, выходим из цикла сотрудников
-    if (tasksReassigned >= 20000) break
+  }
+  return [null, null, null]
 }
 
-def summary = """Сотрудников обработано: ${employeesProcessed}
-Задач переназначено: ${tasksReassigned}
-Лицензий изменено: ${licensesChanged}
-Не найдены сотрудники (ФИО): ${notFoundList.join(', ')}
-"""
-// Возвращаем итоговый лог (выводится в консоли)4.
-return summary
-// ]]>
+/* ===================== ИЗМЕНИТЬ tryAssign (строка ~197) ===================== */
+
+def tryAssign = { obj, List<String> fields, String targetUuid ->
+  for (f in fields) {
+    try {
+      // Проверяем, уже назначено ли
+      if (alreadyAssignedTo(obj, f, targetUuid)) {
+        say('i', "SKIP: ${obj.UUID} уже назначен ${f}=${targetUuid}")
+        return 'already_assigned'  // ← НОВОЕ: специальное значение
+      }
+      
+      if (DRY_RUN) { 
+        say('i', "DRY: ${obj.UUID} -> ${f} := ${targetUuid}")
+        return 'assigned'  // ← НОВОЕ
+      }
+      
+      inTx { utils.edit(obj, [(f): targetUuid]) }
+      say('i', "OK: ${obj.UUID} -> ${f} := ${targetUuid}")
+      return 'assigned'  // ← НОВОЕ
+      
+    } catch (Throwable t) { 
+      sayDbg("Ошибка назначения ${f} для ${obj.UUID}: ${t.message}")
+      /* поле может отсутствовать — пробуем следующее */ 
+    }
+  }
+  return 'failed'  // ← НОВОЕ: явно указываем неудачу
+}
+
+/* ===================== ИЗМЕНИТЬ ЛОГИКУ НАЗНАЧЕНИЯ (строка ~267) ===================== */
+
+related.each { o ->
+  if (editsForEmp >= MAX_EDITS_PER_EMPLOYEE || totalEdits >= MAX_TOTAL_EDITS) return
+
+  def (sc, st) = getStatusInfo(o)
+  if ((sc && SKIP_STATUS_CODES.contains(sc)) || (st && SKIP_STATUS_TITLES.contains(st))) {
+    skippedResolved++
+    return
+  }
+
+  try {
+    def result = tryAssign(o, targetFields, targetUuid)
+    
+    // Альтернативное назначение ТОЛЬКО если основное FAILED (не уже назначено!)
+    if (result == 'failed') {  // ← ИСПРАВЛЕНО: было if (!ok)
+      def altUuid = (targetKind == 'ou') ? normalizeUuid(emp?.team, 'team') : normalizeUuid(emp?.ou, 'ou')
+      def altFields = (targetKind == 'ou') ? TEAM_TARGET_FIELDS : OU_TARGET_FIELDS
+      
+      if (altUuid) {
+        result = tryAssign(o, altFields, altUuid)
+      }
+    }
+    
+    // Увеличиваем счётчики ТОЛЬКО при реальном назначении
+    if (result == 'assigned') {  // ← ИСПРАВЛЕНО: было if (ok)
+      editsForEmp++
+      totalEdits++
+      sleepIfNeeded()
+    }
+    
+  } catch (Throwable t) {
+    say('e', "Ошибка при назначении ${o?.UUID}: ${t.message}")
+  }
+}
+
+/* ===================== УЛУЧШИТЬ alreadyAssignedTo (строка ~180) ===================== */
+
+def alreadyAssignedTo = { obj, String field, String targetUuid ->
+  try {
+    def v = obj."${field}"
+    if (!v) return false
+    
+    def currentUuid = (v?.UUID ?: (v instanceof String ? v : null))?.toString()
+    if (!currentUuid) return false
+    
+    // Нормализация для сравнения (убираем префиксы)
+    def normalizedCurrent = currentUuid.contains('$') ? currentUuid.split('\\$')[1] : currentUuid
+    def normalizedTarget = targetUuid.contains('$') ? targetUuid.split('\\$')[1] : targetUuid
+    
+    return normalizedCurrent == normalizedTarget
+    
+  } catch (Throwable t) { 
+    sayDbg("Ошибка проверки ${field} для ${obj?.UUID}: ${t.message}")
+    return false 
+  }
+}
