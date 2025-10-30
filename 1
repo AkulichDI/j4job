@@ -1,30 +1,28 @@
-char DELIM = ','   // если у вас ; — поставьте ';'
-int  FIO_COL = 0   // номер колонки с ФИО (0 — первая)
+// ВСТАВЬТЕ CSV между $/ и /$
+def CSV_TEXT = $/
+Иванов Иван Иванович,ivanov@example.com,Отдел
+Петров Петр Петрович,petrov@example.com,Отдел
+/$
 
-def lines = CSV_TEXT.readLines()
+char DELIM = ','   // замените на ';' если у вас ; 
+int  FIO_COL = 0   // индекс колонки с ФИО (0 — первая)
 
-def splitCsv = { String line ->
-  def out = []; def sb = new StringBuilder(); boolean inQuotes = false
-  for (int i = 0; i < line.size(); i++) {
-    char ch = line.charAt(i)
-    if (ch == '"') {
-      if (inQuotes && i+1 < line.size() && line.charAt(i+1) == '"') { sb.append('"'); i++ }
-      else { inQuotes = !inQuotes }
-      continue
-    }
-    if (ch == DELIM && !inQuotes) { out << sb.toString().trim(); sb.setLength(0) }
-    else { sb.append(ch) }
-  }
-  out << sb.toString().trim(); out
+def looksLikeFio = { String s ->
+  def w = (s ?: '').trim().tokenize(/\s+/)
+  w.size() >= 2 && !(s =~ /\d/)
 }
 
-def rows = lines
-  .findAll { it?.trim() && !it.trim().startsWith('#') && !it.trim().startsWith('//') }
+def fioList = CSV_TEXT.readLines()
+  .findAll { it?.trim() }                                   // убираем пустые строки
   .collect { line ->
-    def cols = splitCsv(line)
-    def fioParts = (cols.size() > FIO_COL ? cols[FIO_COL] : '').trim().tokenize(/\s+/)
-    [ fio: fioParts.take(3).join(' '), fioParts: fioParts, cols: cols, raw: line ]
+    def parts = line.split(java.util.regex.Pattern.quote(String.valueOf(DELIM)), -1)
+    def cell  = parts.size() > FIO_COL ? parts[FIO_COL] : ''
+    def words = cell.trim().tokenize(/\s+/)
+    words.take(3).join(' ')
   }
+  .findAll(looksLikeFio)                                    // оставляем только «похоже на ФИО»
 
-println "Строк: ${rows.size()}"
-println rows.take(5)*.fio
+// Если нужен лог — раскомментируйте:
+// fioList.each { logger.info(it) }
+
+return fioList   // массив только из ФИО
