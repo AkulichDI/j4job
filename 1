@@ -1,92 +1,227 @@
-// Определение CSV-данных как многострочных литералов
-def PART1 = $/Иванов Иван Иванович,ou$1001,team$2001
-Петров Петр Петрович,ou$1002,
-$/  // конец PART1
-def PART2 = $/Сидоров Сидор Сидорович,ou$1003,team$2002/$.stripIndent()
+/* =============== НАСТРОЙКИ ВВОДА CSV =============== */
+// ВСТАВЬТЕ ваш CSV (запятая-разделитель, ФИО в 1-й колонке).
+// Если CSV большой — вставляйте частями (по ~250 строк) и запускайте скрипт несколько раз.
+def CSV_TEXT = $/
+Фамилия Имя Отчество,другие,колонки,могут,быть,любые
+/$
 
-// Сборка полного текста CSV
-String csvText = PART1 + '\n' + PART2
+/* =============== ПАРАМЕТРЫ ПОВЕДЕНИЯ =============== */
+char DELIM   = ','        // разделитель в CSV
+int  FIO_COL = 0          // индекс колонки с ФИО (0 — первая)
 
-// Разбиение на строки и извлечение ФИО (первые 3 слова первой колонки)
-def fioList = []
-csvText.readLines().each { line ->
-    if (!line.trim()) return
-    def cols = line.split(',')
-    def nameParts = cols[0].split(/\s+/)
-    if (nameParts.size() >= 3) {
-        fioList << "${nameParts[0]} ${nameParts[1]} ${nameParts[2]}"
-    }
+boolean DRY_RUN  = true   // сначала true; затем переключите на false
+long    SLEEP_MS = 0      // пауза (мс) между изменениями, чтобы снизить нагрузку
+
+// Приоритет цели: сперва подразделение (OU), потом команда (team)
+List<String> TARGET_PRIORITY = ['ou','team']
+
+// Где и по каким связям искать связанные объекты
+List<String> CLASSES   = ['serviceCall','task']  // добавьте при необходимости: 'changeRequest','problem'
+List<String> REL_ATTRS = [
+  'responsibleEmployee','executor','assignee','author',
+  'clientEmployee','initiator','manager','observer'
+]
+
+// В какие поля назначать (перебор — что есть в вашей конфигурации)
+List<String> OU_TARGET_FIELDS   = ['responsibleOu','ou']
+List<String> TEAM_TARGET_FIELDS = ['responsibleTeam','team','executorTeam']
+
+// Пропуск «закрытых/разрешённых»
+Set<String> SKIP_STATUS_CODES  = ['resolved','closed','canceled','cancelled','done','completed'] as Set
+Set<String> SKIP_STATUS_TITLES = ['разрешен','разрешено','закрыт','закрыто','отклонен','выполнен','решено'] as Set
+
+// Ограничители (чтобы не перегрузить среду)
+int MAX_EDITS_PER_EMPLOYEE = 500
+int MAX_TOTAL_EDITS        = 20000
+
+/* =============== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =============== */
+// Логгер (фолбэк на println)
+def log = (this.metaClass.hasProperty(this,'logger') ? logger :
+  [info:{Object m->println(m)}, warn:{Object m->println(m)}, error:{Object m->println(m)}])
+
+def sleepIfNeeded = { if (SLEEP_MS > 0) Thread.sleep(SLEEP_MS) }
+
+// Выполнить блок в транзакции (если api.tx.call доступен)
+def inTx = { Closure c ->
+  if (this.metaClass.hasProperty(this,'api') && api?.tx) return api.tx.call { c.call() }
+  return c.call()
 }
 
-// Статистика
-def stats = [processedEmployees:0, reassignedTasks:0, skippedTasks:0, licensedChanged:0]
-
-// Основной цикл по сотрудникам
-fioList.each { fullName ->
-    // Разбить ФИО на компоненты
-    def parts = fullName.split(/\s+/)
-    def lastName = parts[0], firstName = parts[1], patronymic = parts[2]
-    
-    // Найти сотрудника по фамилии (или по полной ФИО, если есть метод поиска)
-    def emps = utils.find('employee', ["lastName": lastName])
-    if (!emps || emps.size() != 1) {
-        logger.warn("Сотрудник с ФИО '${fullName}' не найден или найдено несколько.")
-        return
+// Разбор одной CSV-строки (учёт кавычек и удвоенных кавычек)
+def splitCsv = { String line ->
+  def out = []; def sb = new StringBuilder(); boolean inQ = false
+  for (int i = 0; i < line.size(); i++) {
+    char ch = line.charAt(i)
+    if (ch == '"') {
+      if (inQ && i+1 < line.size() && line.charAt(i+1) == '"') { sb << '"'; i++ }
+      else { inQ = !inQ }; continue
     }
-    def employee = utils.get(emps[0])
-    stats.processedEmployees++
-    
-    // Извлечь OU и team из той же строки CSV (если есть дополнительные колонки)
-    def row = csvText.readLines().find{ it.startsWith(lastName + ' ' + firstName) }
-    def cols = row.split(',')
-    def ouCode = cols.size() > 1 ? cols[1] : null
-    def teamCode = cols.size() > 2 ? cols[2] : null
-    
-    // Назначение OU/команды сотруднику (пример)
-    if (ouCode) {
-        def ouObj = utils.get(ouCode)  // предполагается, что ouCode — это UUID вида 'ou$...'
-        if (ouObj) utils.edit(employee, ["ou": ouObj])
-    }
-    if (teamCode) {
-        def teamObj = utils.get(teamCode)  // 'team$...'
-        if (teamObj) utils.edit(employee, ["teams": [teamObj]])
-    }
-    
-    // Переназначение связанных задач/заявок (задачи сервиса serviceCall)
-    def tasks = utils.find('serviceCall', ["responsible": employee])
-    tasks.each { taskUuid ->
-        def task = utils.get(taskUuid)
-        // Получить текущий код статуса
-        def lastStateEvt = utils.lastState(task)
-        def currentState = lastStateEvt?.newStateCode
-        // Проверить, не завершён ли объект (например, 'closed' или 'done')
-        if (currentState == 'closed' || currentState == 'done') {
-            stats.skippedTasks++
-            return
-        }
-        // Переназначить задачу (например, на OU или команду)
-        try {
-            api.tx.call {
-                // Пример: переназначаем ответственного (null здесь просто пример)
-                def errors = utils.setResponsible(task, null, null)
-                if (!errors.isEmpty()) {
-                    logger.error("Ошибка при назначении ответственного для ${task.UUID}: " + errors)
-                }
-            }
-            stats.reassignedTasks++
-        } catch (Exception e) {
-            logger.error("Ошибка при переназначении задачи ${task.UUID}: " + e.getMessage(), e)
-        }
-    }
-    
-    // Перевод лицензии в notLicensed (если необходимо)
-    if (employee.licensed != 'notLicensed') {
-        utils.edit(employee, ["licensed": "notLicensed"])
-        stats.licensedChanged++
-    }
+    if (ch == DELIM && !inQ) { out << sb.toString().trim(); sb.setLength(0) }
+    else { sb << ch }
+  }
+  out << sb.toString().trim(); out
 }
 
-// Логирование статистики
-logger.info("Сотрудников найдено и обработано: ${stats.processedEmployees}")
-logger.info("Задач переназначено: ${stats.reassignedTasks}, пропущено (завершённых): ${stats.skippedTasks}")
-logger.info("Сотрудников переведено в notLicensed: ${stats.licensedChanged}")
+// Построить массив ФИО (первые 3 слова из 1-й колонки)
+def buildFioList = { String csvText ->
+  csvText.readLines()
+    .findAll { it?.trim() && !it.trim().startsWith('#') && !it.trim().startsWith('//') }
+    .collect { line ->
+      def cols = splitCsv(line)
+      def cell = cols.size() > FIO_COL ? cols[FIO_COL] : ''
+      def words = cell.trim().tokenize(/\s+/)
+      words.take(3).join(' ')
+    }
+    .findAll { it && it.split(/\s+/).size() >= 2 } // отсечь мусор
+}
+
+// Поиск сотрудника по ФИО
+def findEmployeeByFio = { String fio ->
+  def p = fio?.trim()?.tokenize(/\s+/) ?: []
+  if (p.size() < 2) return null
+  def q = [lastName: p[0], firstName: p[1]]
+  if (p.size() > 2) q.middleName = p[2]
+  try {
+    def lst = utils.find('employee', q, sp.ignoreCase())
+    if (!lst) return null
+    if (lst.size() > 1) {
+      def exact = lst.find { (it.title ?: '').equalsIgnoreCase(fio) }
+      return exact ?: lst[0]
+    }
+    return lst[0]
+  } catch (Throwable t) {
+    log.error("Ошибка поиска сотрудника '${fio}': ${t.message}")
+    return null
+  }
+}
+
+// Текущий статус объекта
+def getStatusInfo = { obj ->
+  def code  = (obj?.status?.code ?: obj?.state?.code ?: obj?.stage?.code ?: '')?.toString()?.toLowerCase()
+  def title = (obj?.status?.title ?: obj?.state?.title ?: obj?.stage?.title ?: '')?.toString()?.toLowerCase()
+  [code, title]
+}
+
+// Цель назначения (UUID + список полей) из ПРОФИЛЯ сотрудника
+def pickTarget = { emp ->
+  for (p in TARGET_PRIORITY) {
+    if (p == 'ou'   && emp?.ou?.UUID)   return [emp.ou.UUID,   OU_TARGET_FIELDS,   'ou']
+    if (p == 'team' && emp?.team?.UUID) return [emp.team.UUID, TEAM_TARGET_FIELDS, 'team']
+  }
+  return [null, null, null]
+}
+
+// Уже назначено на нужное значение?
+def alreadyAssignedTo = { obj, String field, String targetUuid ->
+  try {
+    def v = obj."${field}"
+    def currentUuid = (v?.UUID ?: (v instanceof String ? v : null))?.toString()
+    return currentUuid && currentUuid == targetUuid
+  } catch (Throwable ignore) { return false }
+}
+
+// Попытка назначить одно из полей (только если ещё не назначено)
+def tryAssign = { obj, List<String> fields, String targetUuid ->
+  for (f in fields) {
+    try {
+      if (alreadyAssignedTo(obj, f, targetUuid)) return false // ничего менять не надо
+      if (DRY_RUN) { log.info("DRY: ${obj.UUID} -> ${f} := ${targetUuid}"); return true }
+      inTx { utils.edit(obj, [(f): targetUuid]) }
+      return true
+    } catch (Throwable ignore) { /* поля может не быть — пробуем следующее */ }
+  }
+  return false
+}
+
+/* =============== ОСНОВНОЙ ПРОЦЕСС =============== */
+def fioList = buildFioList(CSV_TEXT)
+log.info("ФИО из CSV: ${fioList.size()}")
+
+int processed = 0, changed = 0, notFound = 0, skippedResolved = 0
+int totalEdits = 0
+int licenseChangedCount = 0  // сколько «появилось» notLicensed
+
+fioList.each { fio ->
+  if (totalEdits >= MAX_TOTAL_EDITS) {
+    log.warn("Достигнут общий лимит правок ${MAX_TOTAL_EDITS}, обработка остановлена"); return
+  }
+
+  def emp = findEmployeeByFio(fio)
+  if (!emp) { notFound++; log.warn("Сотрудник не найден: ${fio}"); return }
+  processed++
+
+  // цель из ПРОФИЛЯ сотрудника
+  def (targetUuid, targetFields, targetKind) = pickTarget(emp)
+  if (!targetUuid || !targetFields) {
+    log.warn("Нет OU/Team у ${emp.title} — переназначения пропущены")
+  }
+
+  // собрать уникальные связанные объекты
+  def seen = new HashSet<String>()
+  def related = []
+  CLASSES.each { cls ->
+    REL_ATTRS.each { ra ->
+      try {
+        def objs = utils.find(cls, [(ra): emp])
+        objs?.each { o -> if (o?.UUID && seen.add(o.UUID)) related << o }
+      } catch (Throwable ignore) { /* связь/класс может отсутствовать — ок */ }
+    }
+  }
+
+  log.info("Сотрудник: ${emp.title} (${emp.UUID}) — связанных объектов: ${related.size()}")
+
+  int editsForEmp = 0
+  if (targetUuid && targetFields) {
+    related.each { o ->
+      if (editsForEmp >= MAX_EDITS_PER_EMPLOYEE || totalEdits >= MAX_TOTAL_EDITS) return
+
+      // пропуск «разрешённых/закрытых»
+      def (sc, st) = getStatusInfo(o)
+      if ((sc && SKIP_STATUS_CODES.contains(sc)) || (st && SKIP_STATUS_TITLES.contains(st))) {
+        skippedResolved++; return
+      }
+
+      try {
+        // приоритетная цель
+        def ok = tryAssign(o, targetFields, targetUuid)
+        if (!ok) {
+          // либо уже назначено; либо поле отсутствует — пробуем альтернативу
+          def altUuid   = (targetKind == 'ou') ? emp?.team?.UUID : emp?.ou?.UUID
+          def altFields = (targetKind == 'ou') ? TEAM_TARGET_FIELDS : OU_TARGET_FIELDS
+          if (altUuid) ok = tryAssign(o, altFields, altUuid)
+        }
+        if (ok) { editsForEmp++; totalEdits++; sleepIfNeeded() }
+      } catch (Throwable t) {
+        log.error("Ошибка при назначении ${o?.UUID}: ${t.message}")
+      }
+    }
+  }
+
+  // Лицензия: если была не notLicensed — переводим и считаем
+  try {
+    def currentLic = emp?.license
+    def licStr = (currentLic instanceof String) ? currentLic?.toString() : currentLic?.toString()
+    boolean already = (licStr?.equalsIgnoreCase('notLicensed'))
+
+    if (!already) {
+      if (DRY_RUN) {
+        log.info("DRY: ${emp.title} license: ${licStr} -> notLicensed")
+        licenseChangedCount++
+      } else {
+        inTx { utils.edit(emp, [license: 'notLicensed']) }
+        licenseChangedCount++
+      }
+    }
+  } catch (Throwable t) {
+    log.error("Не удалось установить license=notLicensed для ${emp.title}: ${t.message}")
+  }
+
+  changed += editsForEmp
+}
+
+// ИТОГИ
+log.info("ГОТОВО: сотрудников обработано=${processed}, не найдены=${notFound}, " +
+         "объектов переназначено≈${changed}, пропущено (закрытые)=${skippedResolved}, totalEdits=${totalEdits}")
+log.info("ЛИЦЕНЗИЙ установлено на notLicensed: ${licenseChangedCount} " +
+         (DRY_RUN ? "(DRY RUN, без реальных изменений)" : "(реально изменено)"))
+return "OK"
