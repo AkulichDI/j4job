@@ -1,17 +1,113 @@
-/* === УСИЛЕННЫЙ ПОИСК СОТРУДНИКА ПО ФИО (LFM: Фамилия Имя Отчество) === */
+/* ===================== ВСТАВЬТЕ CSV ЗДЕСЬ ===================== */
+/* Разделитель — запятая, ФИО — в первой колонке (0), формат LFM: Фамилия Имя Отчество.
+ * Вставляйте порциями (например, по 200–250 строк) и запускайте скрипт. */
+def CSV_TEXT = $/
+Иванов Иван Иванович,любой,мусор
+/$
+
+/* ===================== ПАРАМЕТРЫ ===================== */
+char DELIM   = ','          // разделитель в CSV
+int  FIO_COL = 0            // индекс колонки с ФИО
+boolean DRY_RUN  = true     // сначала true; для реальных изменений -> false
+long    SLEEP_MS = 0        // пауза между edit (мс), если нужно снизить нагрузку
+
+// приоритет назначения: сначала подразделение (OU), потом команда (team)
+List<String> TARGET_PRIORITY = ['ou','team']
+
+// где и по каким связям искать связанные объекты
+List<String> CLASSES   = ['serviceCall','task']   // при необходимости: 'changeRequest','problem'
+List<String> REL_ATTRS = [
+  'responsibleEmployee','executor','assignee','author',
+  'clientEmployee','initiator','manager','observer'
+]
+
+// поля назначения (перебираем — что реально есть в вашей конфигурации)
+List<String> OU_TARGET_FIELDS   = ['responsibleOu','ou']
+List<String> TEAM_TARGET_FIELDS = ['responsibleTeam','team','executorTeam']
+
+// статусы, которые НЕ трогаем
+Set<String> SKIP_STATUS_CODES  = ['resolved','closed','canceled','cancelled','done','completed'] as Set
+Set<String> SKIP_STATUS_TITLES = ['разрешен','разрешено','закрыт','закрыто','отклонен','выполнен','решено'] as Set
+
+// ограничители, чтобы «не положить» среду
+int MAX_EDITS_PER_EMPLOYEE = 500
+int MAX_TOTAL_EDITS        = 20000
+
+/* ===================== УТИЛИТЫ (лог, транзакции, парсинг) ===================== */
+// логгер + отчёт (вернём в окно консоли)
+def log = (this.metaClass.hasProperty(this,'logger') ? logger :
+  [info:{Object m->println(m)}, warn:{Object m->println(m)}, error:{Object m->println(m)}])
+def report = new StringBuilder()
+def say = { String level, String msg ->
+  report.append(msg).append('\n')
+  try {
+    if (level=='i') log.info(msg)
+    else if (level=='w') log.warn(msg)
+    else log.error(msg)
+  } catch(ignore){}
+}
+def sleepIfNeeded = { if (SLEEP_MS > 0) Thread.sleep(SLEEP_MS) }
+def inTx = { Closure c ->    // транзакция, если доступна
+  if (this.metaClass.hasProperty(this,'api') && api?.tx) return api.tx.call { c.call() }
+  return c.call()
+}
+
+// CSV-сплит строки (учёт кавычек и "" внутри)
+def splitCsv = { String line ->
+  def out = []; def sb = new StringBuilder(); boolean inQ = false
+  for (int i = 0; i < line.size(); i++) {
+    char ch = line.charAt(i)
+    if (ch == '"') {
+      if (inQ && i+1 < line.size() && line.charAt(i+1) == '"') { sb << '"'; i++ }
+      else { inQ = !inQ }
+      continue
+    }
+    if (ch == DELIM && !inQ) { out << sb.toString().trim(); sb.setLength(0) }
+    else { sb << ch }
+  }
+  out << sb.toString().trim(); out
+}
+
+// массив ТОЛЬКО из ФИО-строк (берём первые 3 слова 1-й колонки)
+def buildFioList = { String csvText ->
+  csvText.readLines()
+    .findAll { it?.trim() && !it.trim().startsWith('#') && !it.trim().startsWith('//') }
+    .collect { line ->
+      def cols = splitCsv(line)
+      def cell = cols.size() > FIO_COL ? cols[FIO_COL] : ''
+      def words = cell?.replace('\u00A0',' ')?.trim()?.replaceAll(/\s+/, ' ')?.tokenize(' ') ?: []
+      words.take(3).join(' ') // LFM строка
+    }
+    .findAll { it && it.split(/\s+/).size() >= 2 }
+}
+
+/* ===================== ПОИСК СОТРУДНИКА ПО ФИО (LFM) ===================== */
+def ENABLE_DEBUG_FIND = true
+def sayDbg = { String s -> if (ENABLE_DEBUG_FIND) report.append("[FIND] ").append(s).append('\n') }
+
+def normFio = { String s ->
+  (s ?: '')
+    .replace('\u00A0',' ')       // неразрывный пробел -> обычный
+    .replaceAll(/\s+/, ' ')      // схлопнуть пробелы
+    .replace('ё','е').replace('Ё','Е')
+    .trim()
+}
+def toObj = { any -> (any instanceof String) ? utils.get(any) : any }
+def toObjList = { lst -> (lst ?: []).collect { toObj(it) } }
+
 def findEmployeeByFio = { String fioInput ->
   try {
     def fio = normFio(fioInput)
     if (!fio) return null
 
-    // 1) быстрые пути по title
+    // 1) по title (точно / LIKE) — часто title = "Фамилия Имя Отчество"
     def byTitleExact = utils.find('employee', [title: fio], sp.ignoreCase())
     if (byTitleExact?.size() == 1) return toObj(byTitleExact[0])
 
     def byTitleLike  = utils.find('employee', [title: op.like('%' + fio + '%')], sp.ignoreCase())
     if (byTitleLike?.size() == 1)  return toObj(byTitleLike[0])
 
-    // 2) разбор на части (LFM: Фамилия, Имя, [Отчество])
+    // 2) разбор LFM: Фамилия, Имя, [Отчество]
     def p = fio.tokenize(' ')
     String last   = p.size() >= 1 ? p[0] : null
     String first  = p.size() >= 2 ? p[1] : null
@@ -21,7 +117,7 @@ def findEmployeeByFio = { String fioInput ->
       return null
     }
 
-    // 3) по трём полям LIKE (вайлдкарды + игнор регистра)
+    // 3) по трём полям LIKE (вайлдкард + игнор регистра)
     List found = []
     if (middle) {
       found = utils.find('employee',
@@ -32,19 +128,19 @@ def findEmployeeByFio = { String fioInput ->
       if (found?.size() == 1) return toObj(found[0])
     }
 
-    // 4) по двум полям (без отчества) — частый кейс
+    // 4) по двум полям (без отчества)
     found = utils.find('employee',
       [lastName:  op.like('%' + last  + '%'),
        firstName: op.like('%' + first + '%')],
       sp.ignoreCase())
     if (found?.size() == 1) return toObj(found[0])
 
-    // 5) если кандидатов несколько — точное совпадение по title (после нормализации)
+    // 5) если кандидатов несколько — точное совпадение по title
     List objs = toObjList(found)
     def exactTitle = objs.find { normFio(it?.title ?: '')?.equalsIgnoreCase(fio) }
     if (exactTitle) return exactTitle
 
-    // 6) широкий поиск по фамилии + фильтр именем/отчеством
+    // 6) широкий поиск по фамилии + фильтр по имени/отчеству
     def byLastOnly = utils.find('employee', [lastName: op.like('%' + last + '%')], sp.ignoreCase())
     List wides = toObjList(byLastOnly).findAll { e ->
       def t = normFio(e?.title ?: '')
@@ -65,3 +161,125 @@ def findEmployeeByFio = { String fioInput ->
     return null
   }
 }
+
+/* ===================== НАЗНАЧЕНИЕ ЦЕЛИ (OU/team из профиля) ===================== */
+def getStatusInfo = { obj ->
+  def code  = (obj?.status?.code ?: obj?.state?.code ?: obj?.stage?.code ?: '')?.toString()?.toLowerCase()
+  def title = (obj?.status?.title ?: obj?.state?.title ?: obj?.stage?.title ?: '')?.toString()?.toLowerCase()
+  [code, title]
+}
+def pickTarget = { emp ->
+  for (p in TARGET_PRIORITY) {
+    if (p == 'ou'   && emp?.ou?.UUID)   return [emp.ou.UUID,   OU_TARGET_FIELDS,   'ou']
+    if (p == 'team' && emp?.team?.UUID) return [emp.team.UUID, TEAM_TARGET_FIELDS, 'team']
+  }
+  return [null, null, null]
+}
+def alreadyAssignedTo = { obj, String field, String targetUuid ->
+  try {
+    def v = obj."${field}"
+    def currentUuid = (v?.UUID ?: (v instanceof String ? v : null))?.toString()
+    return currentUuid && currentUuid == targetUuid
+  } catch (Throwable ignore) { return false }
+}
+def tryAssign = { obj, List<String> fields, String targetUuid ->
+  for (f in fields) {
+    try {
+      if (alreadyAssignedTo(obj, f, targetUuid)) return false
+      if (DRY_RUN) { say('i', "DRY: ${obj.UUID} -> ${f} := ${targetUuid}"); return true }
+      inTx { utils.edit(obj, [(f): targetUuid]) }
+      return true
+    } catch (Throwable ignore) { /* поле может отсутствовать — пробуем следующее */ }
+  }
+  return false
+}
+
+/* ===================== ОСНОВНОЙ ПРОЦЕСС ===================== */
+def fioList = buildFioList(CSV_TEXT)
+say('i', "ФИО из CSV: ${fioList.size()}")
+
+int processed = 0, changed = 0, notFound = 0, skippedResolved = 0
+int totalEdits = 0
+int licenseChangedCount = 0
+def notFoundList = []
+def licenseChangedList = []
+
+fioList.each { fio ->
+  if (totalEdits >= MAX_TOTAL_EDITS) { say('w', "Достигнут общий лимит правок ${MAX_TOTAL_EDITS}, остановка"); return }
+
+  def emp = findEmployeeByFio(fio)
+  if (!emp) { notFound++; notFoundList << fio; say('w', "Сотрудник не найден: ${fio}"); return }
+  processed++
+
+  def (targetUuid, targetFields, targetKind) = pickTarget(emp)
+  if (!targetUuid || !targetFields) say('w', "Нет OU/Team у ${emp.title} — переназначения пропущены")
+
+  // собрать уникальные связанные объекты (приводим к объектам на всякий случай)
+  def seen = new HashSet<String>()
+  def related = []
+  CLASSES.each { cls ->
+    REL_ATTRS.each { ra ->
+      try {
+        def objs = utils.find(cls, [(ra): emp])
+        objs?.each { any ->
+          def o = toObj(any)
+          if (o?.UUID && seen.add(o.UUID)) related << o
+        }
+      } catch (Throwable ignore) { /* связь/класс может отсутствовать — ок */ }
+    }
+  }
+
+  say('i', "Сотрудник: ${emp.title} (${emp.UUID}) — связанных объектов: ${related.size()}")
+
+  int editsForEmp = 0
+  if (targetUuid && targetFields) {
+    related.each { o ->
+      if (editsForEmp >= MAX_EDITS_PER_EMPLOYEE || totalEdits >= MAX_TOTAL_EDITS) return
+
+      def (sc, st) = getStatusInfo(o)
+      if ((sc && SKIP_STATUS_CODES.contains(sc)) || (st && SKIP_STATUS_TITLES.contains(st))) {
+        skippedResolved++; return
+      }
+
+      try {
+        def ok = tryAssign(o, targetFields, targetUuid)
+        if (!ok) {
+          def altUuid   = (targetKind == 'ou') ? emp?.team?.UUID : emp?.ou?.UUID
+          def altFields = (targetKind == 'ou') ? TEAM_TARGET_FIELDS : OU_TARGET_FIELDS
+          if (altUuid) ok = tryAssign(o, altFields, altUuid)
+        }
+        if (ok) { editsForEmp++; totalEdits++; sleepIfNeeded() }
+      } catch (Throwable t) {
+        say('e', "Ошибка при назначении ${o?.UUID}: ${t.message}")
+      }
+    }
+  }
+
+  // смена лицензии → notLicensed (только если действительно меняется)
+  try {
+    def cur = emp?.license
+    boolean already = false
+    if (cur instanceof String)            already = cur.equalsIgnoreCase('notLicensed')
+    else if (cur?.code)                  already = cur.code.toString().equalsIgnoreCase('notLicensed')
+    else if (cur?.title)                 already = cur.title.toString().toLowerCase().contains('нелиценз')
+
+    if (!already) {
+      if (DRY_RUN) { say('i', "DRY: ${emp.title} license: ${cur} -> notLicensed"); licenseChangedCount++; licenseChangedList << emp.title }
+      else { inTx { utils.edit(emp, [license: 'notLicensed']) }; licenseChangedCount++; licenseChangedList << emp.title }
+    }
+  } catch (Throwable t) {
+    say('e', "Не удалось установить license=notLicensed для ${emp.title}: ${t.message}")
+  }
+
+  changed += editsForEmp
+}
+
+// ИТОГИ (в окно консоли и в лог)
+say('i', "ГОТОВО: сотрудников обработано=${processed}, не найдены=${notFound}, " +
+         "объектов переназначено≈${changed}, пропущено (закрытые)=${skippedResolved}, totalEdits=${totalEdits}")
+say('i', "ЛИЦЕНЗИЙ установлено на notLicensed: ${licenseChangedCount} " +
+         (DRY_RUN ? "(DRY RUN — без реальных изменений)" : "(реально изменено)"))
+if (notFoundList)        say('w', "Не найдены: " + notFoundList.join('; '))
+if (licenseChangedList)  say('i', "Кому сменили лицензию: " + licenseChangedList.join('; '))
+
+return report.toString()
