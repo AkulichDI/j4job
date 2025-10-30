@@ -1,53 +1,67 @@
-// НОРМАЛИЗАЦИЯ + ПОИСК ПО ФИО
-def findEmployeeByFio = { String fio ->
+/* === УСИЛЕННЫЙ ПОИСК СОТРУДНИКА ПО ФИО (LFM: Фамилия Имя Отчество) === */
+def findEmployeeByFio = { String fioInput ->
   try {
-    // 1) нормализуем пробелы и 'ё'→'е' (часто помогает)
-    def norm = fio?.trim()?.replaceAll(/\s+/, ' ')?.replace('ё','е')?.replace('Ё','Е')
-    if (!norm) return null
+    def fio = normFio(fioInput)
+    if (!fio) return null
 
-    def p = norm.tokenize(' ')
-    def last  = p.size() >= 1 ? p[0] : null
-    def first = p.size() >= 2 ? p[1] : null
-    def middle= p.size() >= 3 ? p[2] : null
+    // 1) быстрые пути по title
+    def byTitleExact = utils.find('employee', [title: fio], sp.ignoreCase())
+    if (byTitleExact?.size() == 1) return toObj(byTitleExact[0])
 
+    def byTitleLike  = utils.find('employee', [title: op.like('%' + fio + '%')], sp.ignoreCase())
+    if (byTitleLike?.size() == 1)  return toObj(byTitleLike[0])
+
+    // 2) разбор на части (LFM: Фамилия, Имя, [Отчество])
+    def p = fio.tokenize(' ')
+    String last   = p.size() >= 1 ? p[0] : null
+    String first  = p.size() >= 2 ? p[1] : null
+    String middle = p.size() >= 3 ? p[2] : null
+    if (!last || !first) {
+      sayDbg("Недостаточно частей для ФИО (ожидаю Фамилия Имя [Отчество]): '${fio}'")
+      return null
+    }
+
+    // 3) по трём полям LIKE (вайлдкарды + игнор регистра)
     List found = []
-
-    // 2) Сначала пытаемся по трём полям, но по LIKE и без учёта регистра
-    if (last && first && middle) {
+    if (middle) {
       found = utils.find('employee',
-        [lastName:  op.like(last),
-         firstName: op.like(first),
-         middleName: op.like(middle)],
+        [lastName:   op.like('%' + last   + '%'),
+         firstName:  op.like('%' + first  + '%'),
+         middleName: op.like('%' + middle + '%')],
         sp.ignoreCase())
+      if (found?.size() == 1) return toObj(found[0])
     }
 
-    // 3) Если не нашли — пробуем без отчества (часто оно пустое/не совпадает)
-    if (!found && last && first) {
-      found = utils.find('employee',
-        [lastName:  op.like(last),
-         firstName: op.like(first)],
-        sp.ignoreCase())
+    // 4) по двум полям (без отчества) — частый кейс
+    found = utils.find('employee',
+      [lastName:  op.like('%' + last  + '%'),
+       firstName: op.like('%' + first + '%')],
+      sp.ignoreCase())
+    if (found?.size() == 1) return toObj(found[0])
+
+    // 5) если кандидатов несколько — точное совпадение по title (после нормализации)
+    List objs = toObjList(found)
+    def exactTitle = objs.find { normFio(it?.title ?: '')?.equalsIgnoreCase(fio) }
+    if (exactTitle) return exactTitle
+
+    // 6) широкий поиск по фамилии + фильтр именем/отчеством
+    def byLastOnly = utils.find('employee', [lastName: op.like('%' + last + '%')], sp.ignoreCase())
+    List wides = toObjList(byLastOnly).findAll { e ->
+      def t = normFio(e?.title ?: '')
+      t.toLowerCase().contains(first.toLowerCase()) &&
+      (!middle || t.toLowerCase().contains(middle.toLowerCase()))
     }
+    if (wides?.size() == 1) return wides[0]
 
-    // 4) Ещё fallback — искать по title (в нём как раз «Фамилия Имя Отчество»)
-    //    Ищем подстроку: %Фамилия Имя Отчество%
-    if (!found) {
-      found = utils.find('employee',
-        [title: op.like('%' + norm + '%')],
-        sp.ignoreCase())
+    // 7) диагностика кандидатов (в отчёт)
+    if (ENABLE_DEBUG_FIND) {
+      def cand = (objs ?: toObjList(byTitleLike ?: byLastOnly)).take(10)
+      if (cand) sayDbg("Кандидаты для '${fio}': " + cand.collect { it?.title ?: it }.join(' | '))
+      else      sayDbg("Кандидатов не найдено для '${fio}'")
     }
-
-    if (!found || found.isEmpty()) return null
-    if (found.size() == 1) return utils.get(found[0]) // вернётся один UUID → достаём объект
-
-    // 5) Если кандидатов несколько — пробуем точное совпадение по title (без регистра)
-    def exact = found
-      .collect { utils.get(it) }
-      .find { (it?.title ?: '').replace('ё','е').equalsIgnoreCase(norm) }
-
-    return exact ?: utils.get(found[0]) // иначе берём первого кандидата
+    return null
   } catch (Throwable t) {
-    // если важна диагностикa — можно залогировать t.message
+    if (ENABLE_DEBUG_FIND) sayDbg("Ошибка поиска '${fioInput}': ${t.message}")
     return null
   }
 }
