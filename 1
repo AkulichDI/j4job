@@ -1,0 +1,30 @@
+char DELIM = ','   // если у вас ; — поставьте ';'
+int  FIO_COL = 0   // номер колонки с ФИО (0 — первая)
+
+def lines = CSV_TEXT.readLines()
+
+def splitCsv = { String line ->
+  def out = []; def sb = new StringBuilder(); boolean inQuotes = false
+  for (int i = 0; i < line.size(); i++) {
+    char ch = line.charAt(i)
+    if (ch == '"') {
+      if (inQuotes && i+1 < line.size() && line.charAt(i+1) == '"') { sb.append('"'); i++ }
+      else { inQuotes = !inQuotes }
+      continue
+    }
+    if (ch == DELIM && !inQuotes) { out << sb.toString().trim(); sb.setLength(0) }
+    else { sb.append(ch) }
+  }
+  out << sb.toString().trim(); out
+}
+
+def rows = lines
+  .findAll { it?.trim() && !it.trim().startsWith('#') && !it.trim().startsWith('//') }
+  .collect { line ->
+    def cols = splitCsv(line)
+    def fioParts = (cols.size() > FIO_COL ? cols[FIO_COL] : '').trim().tokenize(/\s+/)
+    [ fio: fioParts.take(3).join(' '), fioParts: fioParts, cols: cols, raw: line ]
+  }
+
+println "Строк: ${rows.size()}"
+println rows.take(5)*.fio
