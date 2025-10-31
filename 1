@@ -1,120 +1,17 @@
-/* ===================== ДОБАВИТЬ ПОСЛЕ УТИЛИТ (после строки ~60) ===================== */
-
-// Нормализация UUID в формат Naumen SD 4.17
-def normalizeUuid = { obj, String fqn ->
-  if (!obj?.UUID) return null
-  def uuid = obj.UUID.toString()
-  
-  // Если уже есть префикс — возвращаем как есть
-  if (uuid.contains('$')) return uuid
-  
-  // Добавляем префикс на основе метакласса
-  def prefix = fqn ?: (obj?.metaClass ? obj.metaClass.toString() : null)
-  if (!prefix) return uuid  // если не удалось определить — возвращаем как есть
-  
-  // Извлекаем короткое имя класса (ou, team, employee и т.д.)
-  def shortName = prefix.tokenize('.')[-1]?.toLowerCase()
-  return "${shortName}$${uuid}"
-}
-
-/* ===================== ИЗМЕНИТЬ pickTarget (строка ~170) ===================== */
-
-def pickTarget = { emp ->
-  for (p in TARGET_PRIORITY) {
-    if (p == 'ou' && emp?.ou?.UUID) {
-      def ouUuid = normalizeUuid(emp.ou, 'ou')
-      if (ouUuid) return [ouUuid, OU_TARGET_FIELDS, 'ou']
+def emp = utils.find('employee', [title: op.like('Иванов%')], sp.ignoreCase()).get(0)
+println "=== ДИАГНОСТИКА ==="
+println "emp.parent = ${emp.parent}"
+println "emp.parent?.UUID = ${emp.parent?.UUID}"
+println "emp.parent?.getClass() = ${emp.parent?.getClass()}"
+println ""
+println "emp.teams = ${emp.teams}"
+println "emp.teams?.UUID = ${emp.teams?.UUID}"
+println "emp.teams?.getClass() = ${emp.teams?.getClass()}"
+if (emp.teams instanceof List) {
+    println "emp.teams.size() = ${emp.teams.size()}"
+    if (emp.teams.size() > 0) {
+        println "emp.teams[0] = ${emp.teams[0]}"
+        println "emp.teams[0]?.UUID = ${emp.teams[0]?.UUID}"
     }
-    if (p == 'team' && emp?.team?.UUID) {
-      def teamUuid = normalizeUuid(emp.team, 'team')
-      if (teamUuid) return [teamUuid, TEAM_TARGET_FIELDS, 'team']
-    }
-  }
-  return [null, null, null]
 }
-
-/* ===================== ИЗМЕНИТЬ tryAssign (строка ~197) ===================== */
-
-def tryAssign = { obj, List<String> fields, String targetUuid ->
-  for (f in fields) {
-    try {
-      // Проверяем, уже назначено ли
-      if (alreadyAssignedTo(obj, f, targetUuid)) {
-        say('i', "SKIP: ${obj.UUID} уже назначен ${f}=${targetUuid}")
-        return 'already_assigned'  // ← НОВОЕ: специальное значение
-      }
-      
-      if (DRY_RUN) { 
-        say('i', "DRY: ${obj.UUID} -> ${f} := ${targetUuid}")
-        return 'assigned'  // ← НОВОЕ
-      }
-      
-      inTx { utils.edit(obj, [(f): targetUuid]) }
-      say('i', "OK: ${obj.UUID} -> ${f} := ${targetUuid}")
-      return 'assigned'  // ← НОВОЕ
-      
-    } catch (Throwable t) { 
-      sayDbg("Ошибка назначения ${f} для ${obj.UUID}: ${t.message}")
-      /* поле может отсутствовать — пробуем следующее */ 
-    }
-  }
-  return 'failed'  // ← НОВОЕ: явно указываем неудачу
-}
-
-/* ===================== ИЗМЕНИТЬ ЛОГИКУ НАЗНАЧЕНИЯ (строка ~267) ===================== */
-
-related.each { o ->
-  if (editsForEmp >= MAX_EDITS_PER_EMPLOYEE || totalEdits >= MAX_TOTAL_EDITS) return
-
-  def (sc, st) = getStatusInfo(o)
-  if ((sc && SKIP_STATUS_CODES.contains(sc)) || (st && SKIP_STATUS_TITLES.contains(st))) {
-    skippedResolved++
-    return
-  }
-
-  try {
-    def result = tryAssign(o, targetFields, targetUuid)
-    
-    // Альтернативное назначение ТОЛЬКО если основное FAILED (не уже назначено!)
-    if (result == 'failed') {  // ← ИСПРАВЛЕНО: было if (!ok)
-      def altUuid = (targetKind == 'ou') ? normalizeUuid(emp?.team, 'team') : normalizeUuid(emp?.ou, 'ou')
-      def altFields = (targetKind == 'ou') ? TEAM_TARGET_FIELDS : OU_TARGET_FIELDS
-      
-      if (altUuid) {
-        result = tryAssign(o, altFields, altUuid)
-      }
-    }
-    
-    // Увеличиваем счётчики ТОЛЬКО при реальном назначении
-    if (result == 'assigned') {  // ← ИСПРАВЛЕНО: было if (ok)
-      editsForEmp++
-      totalEdits++
-      sleepIfNeeded()
-    }
-    
-  } catch (Throwable t) {
-    say('e', "Ошибка при назначении ${o?.UUID}: ${t.message}")
-  }
-}
-
-/* ===================== УЛУЧШИТЬ alreadyAssignedTo (строка ~180) ===================== */
-
-def alreadyAssignedTo = { obj, String field, String targetUuid ->
-  try {
-    def v = obj."${field}"
-    if (!v) return false
-    
-    def currentUuid = (v?.UUID ?: (v instanceof String ? v : null))?.toString()
-    if (!currentUuid) return false
-    
-    // Нормализация для сравнения (убираем префиксы)
-    def normalizedCurrent = currentUuid.contains('$') ? currentUuid.split('\\$')[1] : currentUuid
-    def normalizedTarget = targetUuid.contains('$') ? targetUuid.split('\\$')[1] : targetUuid
-    
-    return normalizedCurrent == normalizedTarget
-    
-  } catch (Throwable t) { 
-    sayDbg("Ошибка проверки ${field} для ${obj?.UUID}: ${t.message}")
-    return false 
-  }
-}
+println "=== КОНЕЦ ДИАГНОСТИКИ ==="
