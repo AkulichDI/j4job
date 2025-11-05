@@ -1,0 +1,161 @@
+import com.naumen.core.shared.dto.IDto
+import com.naumen.core.server.query.QueryPool
+
+// ===== ВХОД (как в 6-й: dollar-slashy) =====
+String CSV_TEXT = $/
+Иванов Иван Иванович
+Петров Петр Петрович
+Сидоров Сидор Сидорович
+/$
+
+// ===== НАСТРОЙКИ =====
+final long TIMEOUT_MS = 4L * 60L * 1000L            // таймаут выполнения
+final int  MAX_NAMES_PER_LIST = 200                 // ограничение длины списков в отчёте
+
+// ===== ОТЧЁТ =====
+class Report {
+    int found = 0
+    int notfound = 0
+    int withLicense = 0
+    int withoutLicense = 0
+
+    // Показать ФИО только "с лицензией"
+    List<String> withLicenseList = []
+    int withLicenseHidden = 0
+
+    // Вспомогательные
+    long startTime = 0
+    boolean timeout = false
+    int processed = 0     // найдено + не найдено
+
+    String summary() {
+        long seconds = (System.currentTimeMillis() - startTime) / 1000
+        String wl = withLicenseList.isEmpty() ? 'Нет' : withLicenseList.join('\n')
+        if (withLicenseHidden > 0) wl += "\n... и ещё ${withLicenseHidden}"
+
+        return """Обработано: ${processed}
+Найдено: ${found}
+Не найдено: ${notfound}
+С лицензией: ${withLicense}
+Без лицензии: ${withoutLicense}
+Таймаут: ${timeout ? 'да' : 'нет'}
+Время: ${seconds}сек
+
+С ЛИЦЕНЗИЕЙ (ФИО):
+${wl}
+"""
+    }
+}
+
+Report report = new Report()
+report.startTime = System.currentTimeMillis()
+final long SCRIPT_START_TIME = report.startTime
+
+// ===== УТИЛИТЫ =====
+boolean checkTimeout() {
+    return (System.currentTimeMillis() - SCRIPT_START_TIME) >= TIMEOUT_MS
+}
+
+// Экранирование для подстановки значений в строку условия
+String esc(String s) {
+    if (s == null) return ''
+    return s.replace("\\", "\\\\").replace("\"", "\\\"")
+}
+
+// ЕДИНЫЙ поиск сотрудника через OR-клаузу, чтобы не делать 6 запросов подряд
+IDto findEmployee(String name) {
+    if (!name?.trim() || checkTimeout()) return null
+
+    String original   = name.trim()
+    String normalized = original.replace('ё','е').replace('Ё','Е').replace('-', ' ').toLowerCase()
+
+    List<String> parts = original.split('\\s+')
+    String lastName  = parts.size() > 0 ? parts[0] : ''
+    String firstName = parts.size() > 1 ? parts[1] : ''
+
+    String o   = esc(original)
+    String nrm = esc(normalized)
+    String ln  = esc(lastName)
+    String fn  = esc(firstName)
+    String lnN = esc(lastName.replace('ё','е').replace('Ё','Е'))
+    String fnN = esc(firstName.replace('ё','е').replace('Ё','Е'))
+
+    List<String> clauses = []
+    // строгий матч по полному имени + два LIKE-варианта
+    clauses << "name = \"$o\""
+    clauses << "name LIKE \"%$o%\""
+    clauses << "name LIKE \"%$nrm%\""
+
+    // если есть фамилия и имя — пробуем по полям
+    if (lastName && firstName) {
+        clauses << "(lastName = \"$ln\" AND firstName = \"$fn\")"
+        clauses << "(lastName = \"$lnN\" AND firstName = \"$fnN\")"
+    }
+
+    String where = clauses.join(" OR ")
+
+    try {
+        def rs = QueryPool.query(where).setMaxResults(1).execute()
+        def lst = rs?.list()
+        return (lst && lst.size() > 0) ? (IDto) lst[0] : null
+    } catch (Exception ignore) {
+        return null
+    }
+}
+
+// ===== ОСНОВНОЙ ПРОХОД =====
+List<String> names = CSV_TEXT
+    .split('\n')
+    .collect { it?.trim() }
+    .findAll { it && !it.startsWith('#') }
+
+// for + break → по таймауту реально остановимся
+for (int i = 0; i < names.size(); i++) {
+    if (checkTimeout()) { report.timeout = true; break }
+
+    String empName = names[i]
+    IDto emp = findEmployee(empName)
+
+    if (emp == null) {
+        report.notfound++
+        report.processed++
+        continue
+    }
+
+    report.found++
+    report.processed++
+
+    // Проверка лицензии — только считаем и собираем ФИО "с лицензией" (без логов)
+    try {
+        def license = emp.licenseName
+        String lic = license?.toString()?.toLowerCase()?.trim()
+
+        boolean noLic = (license == null) ||
+                        lic == 'notlicensed' ||
+                        lic == 'not licensed' ||
+                        lic == 'none' ||
+                        lic == 'нет' ||
+                        lic == 'отсутствует' ||
+                        lic == ''
+
+        if (noLic) {
+            report.withoutLicense++
+        } else {
+            report.withLicense++
+            if (report.withLicenseList.size() < MAX_NAMES_PER_LIST) {
+                report.withLicenseList.add(empName)
+            } else {
+                report.withLicenseHidden++
+            }
+        }
+    } catch (Exception ignore) {
+        // Если чтение поля упало — считаем как "без лицензии" безопасно
+        report.withoutLicense++
+    }
+
+    // подчистка ссылок (не обязательно, но пусть будет)
+    emp = null
+}
+
+// Короткий и безопасный итог (не засоряет persistent context)
+report.summary()
