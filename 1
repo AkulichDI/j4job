@@ -1,110 +1,49 @@
-// ====================== НАСТРОЙКИ ВВОДА ======================
+// ========== ВХОД ==========
 String CSV_TEXT = $/
 Иванов Иван Иванович
 Петров Петр Петрович
 Сидоров Сидор Сидорович
 /$
 
-// Таймаут выполнения скрипта
-long TIMEOUT_MS = 4L * 60L * 1000L
+// ========== НАСТРОЙКИ ==========
+long TIMEOUT_MS = 4L * 60L * 1000L      // таймаут
+int  MAX_NAMES_PER_LIST = 200           // ограничение длины списка ФИО "с лицензией"
 
-// Ограничение длины списков в итоговом отчёте (защита от переполнения persistent context)
-int MAX_NAMES_PER_LIST = 200
+// ========== ТАЙМИНГ ==========
+final long START_TS = System.currentTimeMillis()
+def checkTimeout = { (System.currentTimeMillis() - START_TS) >= TIMEOUT_MS }
 
-// Нужны ли массивные выборки задач (оставлено на будущее; по умолчанию выключено)
-boolean DO_TASK_FETCH = false
-int    MAX_TASKS_TO_FETCH = 1000  // лимит для пачек задач, если DO_TASK_FETCH=true
+// ========== УТИЛИТЫ ==========
+def esc = { String s -> s ? s.replace("\\", "\\\\").replace("\"", "\\\"") : "" }
 
-
-// ====================== ОТЧЁТ ======================
-class Report {
-    int found = 0
-    int notfound = 0
-    int withLicense = 0
-    int withoutLicense = 0
-
-    // Печатаем только ФИО "с лицензией"
-    List<String> withLicenseList = []
-    int withLicenseHidden = 0
-
-    // Счётчики по задачам (на будущее, если включим DO_TASK_FETCH)
-    int totalResolvedTasks = 0
-    int totalOpenTasks = 0
-
-    long startTime = 0
-    boolean timeout = false
-    int processed = 0
-
-    String summary() {
-        long seconds = (System.currentTimeMillis() - startTime) / 1000
-
-        String wl = withLicenseList.isEmpty() ? 'Нет' : withLicenseList.join('\n')
-        if (withLicenseHidden > 0) wl += "\n... и ещё ${withLicenseHidden}"
-
-        return """Обработано: ${processed}
-Найдено: ${found}
-Не найдено: ${notfound}
-С лицензией: ${withLicense}
-Без лицензии: ${withoutLicense}
-Задач (разрешённых): ${totalResolvedTasks}
-Задач (открытых): ${totalOpenTasks}
-Таймаут: ${timeout ? 'да' : 'нет'}
-Время: ${seconds}сек
-
-С ЛИЦЕНЗИЕЙ (ФИО):
-${wl}
-"""
-    }
-}
-
-def report = new Report()
-report.startTime = System.currentTimeMillis()
-long SCRIPT_START_TIME = report.startTime
-
-
-// ====================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ======================
-
-// Проверка таймаута
-boolean checkTimeout() {
-    return (System.currentTimeMillis() - SCRIPT_START_TIME) >= TIMEOUT_MS
-}
-
-// Экранирование для безопасной подстановки значений в условие запроса
-String esc(String s) {
-    if (s == null) return ''
-    // Сначала обратный слэш, затем кавычка
-    return s.replace("\\", "\\\\").replace("\"", "\\\"")
-}
-
-// Единый поиск сотрудника одним запросом с OR (вместо 5–6 последовательных запросов)
-def findEmployee(String name) {
+def findEmployee = { String name ->
     if (!name?.trim() || checkTimeout()) return null
 
     String original   = name.trim()
     String normalized = original.replace('ё','е').replace('Ё','Е').replace('-', ' ').toLowerCase()
 
-    List parts = original.split('\\s+')
-    String lastName  = parts.size() > 0 ? parts[0] : ''
-    String firstName = parts.size() > 1 ? parts[1] : ''
+    def parts = original.split('\\s+')
+    String ln = parts.size() > 0 ? parts[0] : ''
+    String fn = parts.size() > 1 ? parts[1] : ''
 
+    // экранированные варианты
     String o   = esc(original)
     String nrm = esc(normalized)
-    String ln  = esc(lastName)
-    String fn  = esc(firstName)
-    String lnN = esc(lastName.replace('ё','е').replace('Ё','Е'))
-    String fnN = esc(firstName.replace('ё','е').replace('Ё','Е'))
+    String lnE = esc(ln)
+    String fnE = esc(fn)
+    String lnN = esc(ln.replace('ё','е').replace('Ё','Е'))
+    String fnN = esc(fn.replace('ё','е').replace('Ё','Е'))
 
     List clauses = []
-    clauses << ("name = \"" + o + "\"")
-    clauses << ("name LIKE \"%" + o + "%\"")
-    clauses << ("name LIKE \"%" + nrm + "%\"")
-    if (lastName && firstName) {
-        clauses << ("(lastName = \"" + ln + "\" AND firstName = \"" + fn + "\")")
-        clauses << ("(lastName = \"" + lnN + "\" AND firstName = \"" + fnN + "\")")
+    clauses << "name = \"${o}\""
+    clauses << "name LIKE \"%${o}%\""
+    clauses << "name LIKE \"%${nrm}%\""
+    if (ln && fn) {
+        clauses << "(lastName = \"${lnE}\" AND firstName = \"${fnE}\")"
+        clauses << "(lastName = \"${lnN}\" AND firstName = \"${fnN}\")"
     }
 
-    String where = clauses.join(" OR ")
-
+    String where = clauses.join(' OR ')
     try {
         def rs = QueryPool.query(where).setMaxResults(1).execute()
         def lst = rs?.list()
@@ -114,102 +53,60 @@ def findEmployee(String name) {
     }
 }
 
-// Проверка, есть ли лицензия
-boolean hasLicense(def emp) {
+def hasLicense = { emp ->
     try {
         def lic = emp?.licenseName
         String s = lic?.toString()?.toLowerCase()?.trim()
-        return !(lic == null ||
-                 s == 'notlicensed' ||
-                 s == 'not licensed' ||
-                 s == 'none' ||
-                 s == 'нет' ||
-                 s == 'отсутствует' ||
-                 s == '')
+        return !(lic == null || s in ['notlicensed','not licensed','none','нет','отсутствует',''])
     } catch (ignored) {
         return false
     }
 }
 
-// Массивные выборки задач — выключены по умолчанию, чтобы не грузить систему
-List getResolvedTasks(def emp, int limit) {
-    if (!emp?.UUID || checkTimeout()) return []
-    try {
-        String uuid = emp.UUID.toString()
-        def rs = QueryPool.query(
-            "(executor = '" + uuid + "' OR responsible = '" + uuid + "' OR secondaryResponsible = '" + uuid + "') AND " +
-            "(status = 'resolved' OR status = 'разрешен' OR status = 'razreshyonnye')"
-        ).setMaxResults(limit).execute()
-        return rs?.list() ?: []
-    } catch (ignored) {
-        return []
-    }
-}
+// ========== ОСНОВНОЙ ПРОХОД ==========
+def names = CSV_TEXT.split('\n').collect{ it?.trim() }.findAll{ it && !it.startsWith('#') }
 
-List getOpenTasks(def emp, int limit) {
-    if (!emp?.UUID || checkTimeout()) return []
-    try {
-        String uuid = emp.UUID.toString()
-        def rs = QueryPool.query(
-            "(executor = '" + uuid + "' OR responsible = '" + uuid + "' OR secondaryResponsible = '" + uuid + "') AND " +
-            "status != 'closed' AND status != 'completed' AND " +
-            "status != 'resolved' AND status != 'разрешен' AND status != 'razreshyonnye'"
-        ).setMaxResults(limit).execute()
-        return rs?.list() ?: []
-    } catch (ignored) {
-        return []
-    }
-}
+int found = 0, notfound = 0, withLicense = 0, withoutLicense = 0, processed = 0
+List withLicenseList = []
+int withLicenseHidden = 0
 
-
-// ====================== ОСНОВНАЯ ЛОГИКА ======================
-
-// Разбор входного списка имён (пустые и закомментированные строки отбрасываем)
-List names = CSV_TEXT
-    .split('\n')
-    .collect { it?.trim() }
-    .findAll { it && !it.startsWith('#') }
-
-// Используем for + break, чтобы корректно остановиться по таймауту
 for (int i = 0; i < names.size(); i++) {
-    if (checkTimeout()) { report.timeout = true; break }
+    if (checkTimeout()) break
 
-    String empName = names[i]
-    def emp = findEmployee(empName)
+    def nm  = names[i]
+    def emp = findEmployee(nm)
 
     if (!emp) {
-        report.notfound++
-        report.processed++
+        notfound++; processed++
         continue
     }
 
-    report.found++
-    report.processed++
+    found++; processed++
 
-    // (опционально) — массивные выборки задач (по умолчанию выключены)
-    if (DO_TASK_FETCH) {
-        List resolvedTasks = getResolvedTasks(emp, MAX_TASKS_TO_FETCH)
-        List openTasks     = getOpenTasks(emp, MAX_TASKS_TO_FETCH)
-        report.totalResolvedTasks += (resolvedTasks?.size() ?: 0)
-        report.totalOpenTasks     += (openTasks?.size() ?: 0)
-        resolvedTasks = null
-        openTasks = null
-    }
-
-    // Проверяем лицензию и при необходимости добавляем ФИО в ограниченный список
     if (hasLicense(emp)) {
-        report.withLicense++
-        if (report.withLicenseList.size() < MAX_NAMES_PER_LIST) {
-            report.withLicenseList.add(empName)
+        withLicense++
+        if (withLicenseList.size() < MAX_NAMES_PER_LIST) {
+            withLicenseList << nm
         } else {
-            report.withLicenseHidden++
+            withLicenseHidden++
         }
     } else {
-        report.withoutLicense++
+        withoutLicense++
     }
-
-    emp = null
 }
 
-// Возвращаем компактный итог (ничего лишнего не логируем, контекст не "засоряем")
-report.summary()
+// ========== ИТОГ ==========
+long seconds = (System.currentTimeMillis() - START_TS) / 1000
+def wl = withLicenseList.isEmpty() ? 'Нет' : withLicenseList.join('\n')
+if (withLicenseHidden > 0) wl += "\n... и ещё ${withLicenseHidden}"
+
+"""Обработано: ${processed}
+Найдено: ${found}
+Не найдено: ${notfound}
+С лицензией: ${withLicense}
+Без лицензии: ${withoutLicense}
+Время: ${seconds}сек
+
+С ЛИЦЕНЗИЕЙ (ФИО):
+${wl}
+"""
