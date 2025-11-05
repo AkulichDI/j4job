@@ -1,0 +1,361 @@
+/* ═════════════════════════════════════════════════════════════════════════════════════
+
+ПРОВЕРКА ЛИЦЕНЗИЙ v1.0 - БЕЗОПАСНЫЙ (только чтение, без изменений)
+
+Версия: для Naumen Service Desk 4.17
+
+ФУНКЦИОНАЛЬНОСТЬ:
+- Поиск сотрудников по ФИО из CSV
+- Проверка наличия лицензии у каждого сотрудника
+- Вывод сводной статистики
+- БЕЗОПАСНО: никаких изменений, только чтение
+
+═════════════════════════════════════════════════════════════════════════════════════ */
+
+
+/* ═════ ВСТАВЬТЕ CSV ЗДЕСЬ ═════ */
+def CSV_TEXT = $/
+Иванов Иван Иванович
+Петров Пётр Петрович
+/$
+
+/* ═════ КОНФИГУРАЦИЯ ═════ */
+char DELIM = ','
+int FIO_COL = 0
+
+/* ═════ ЛОГИРОВАНИЕ ═════ */
+def log = (this.metaClass.hasProperty(this, 'logger') ? logger : [
+info:  { m -> println("[INFO] ${m}") },
+warn:  { m -> println("[WARN] ${m}") },
+error: { m -> println("[ERROR] ${m}") },
+debug: { m -> println("[DEBUG] ${m}") }
+])
+
+def report = new StringBuilder()
+
+def say = { String level, String msg ->
+report.append(msg).append('\n')
+try {
+switch(level.toLowerCase()) {
+case 'i': case 'info': log.info(msg); break
+case 'w': case 'warn': log.warn(msg); break
+case 'e': case 'error': log.error(msg); break
+case 'd': case 'debug': log.debug(msg); break
+}
+} catch (Exception ignore) {}
+}
+
+/* ═════ ПАРСИНГ CSV ═════ */
+def splitCsv = { String line ->
+def result = []
+def current = new StringBuilder()
+boolean inQuotes = false
+for (int i = 0; i < line.length(); i++) {
+char ch = line.charAt(i)
+if (ch == '"') {
+if (inQuotes && i + 1 < line.length() && line.charAt(i + 1) == '"') {
+current.append('"')
+i++
+} else {
+inQuotes = !inQuotes
+}
+} else if (ch == DELIM && !inQuotes) {
+result.add(current.toString().trim())
+current.setLength(0)
+} else {
+current.append(ch)
+}
+}
+result.add(current.toString().trim())
+return result
+}
+
+def buildFioList = { String csvText ->
+def fioList = []
+csvText.readLines().each { line ->
+def trimmed = line?.trim()
+if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('//')) return
+try {
+def cols = splitCsv(line)
+def fioCell = cols.size() > FIO_COL ? cols[FIO_COL] : ''
+def normalized = fioCell?.replace('\u00A0', ' ')?.replaceAll(/\s+/, ' ')?.trim()
+if (!normalized) return
+def words = normalized.tokenize(' ')
+if (words.size() < 2) return
+def fio = words.take(3).join(' ')
+if (!fioList.contains(fio)) fioList.add(fio)
+} catch (Exception e) {
+say('w', "Ошибка CSV: ${line}")
+}
+}
+return fioList
+}
+
+/* ═════ ПОИСК СОТРУДНИКА (ИЗ v6.0) ═════ */
+def normalizeFio = { String s ->
+(s ?: '').replace('\u00A0', ' ').replaceAll(/\s+/, ' ')
+.replace('ё', 'е').replace('Ё', 'Е').trim()
+}
+
+def toObj = { any ->
+try {
+return (any instanceof String) ? utils.get(any) : any
+} catch (Exception e) { return any }
+}
+
+def findEmployeeByFio = { String fioInput ->
+try {
+def fio = normalizeFio(fioInput)
+if (!fio) return null
+
+try {
+def found = utils.find('employee', [title: fio])
+if (found?.size() == 1) return toObj(found[0])
+} catch (Exception ignore) {}
+
+try {
+def found = utils.find('employee', [title: op.like("%${fio}%")])
+if (found?.size() == 1) return toObj(found[0])
+} catch (Exception ignore) {}
+
+def parts = fio.tokenize(' ')
+if (parts.size() >= 2) {
+try {
+def lastName = parts[0]
+def firstName = parts[1]
+def found = utils.find('employee', [lastName: lastName, firstName: firstName])
+if (found?.size() == 1) return toObj(found[0])
+} catch (Exception ignore) {}
+}
+
+def parts2 = fio.tokenize(' ')
+if (parts2.size() >= 2) {
+try {
+def lastName = parts2[0]
+def firstName = parts2[1]
+def found = utils.find('employee', [name: op.like("%${lastName}%"), firstName: op.like("%${firstName}%")])
+if (found?.size() == 1) return toObj(found[0])
+} catch (Exception ignore) {}
+}
+
+try {
+def found = utils.find('employee', [lastName: parts[0]])
+if (found?.size() == 1) return toObj(found[0])
+} catch (Exception ignore) {}
+
+return null
+} catch (Exception e) {
+say('d', "Ошибка поиска: ${e.message}")
+return null
+}
+}
+
+/* ═════ ПРОВЕРКА ЛИЦЕНЗИИ ═════ */
+def checkLicense = { emp ->
+try {
+if (!emp) return ['UNKNOWN', 'Сотрудник не найден']
+def currentLicense = emp?.license
+
+if (!currentLicense) {
+return ['NO_LICENSE', 'Нет лицензии']
+}
+
+// Проверка на notLicensed
+if (currentLicense instanceof String) {
+def licStr = currentLicense.toLowerCase()
+if (licStr.contains('notlicensed') || licStr.contains('нелиценз')) {
+return ['NOT_LICENSED', currentLicense]
+}
+return ['LICENSED', currentLicense]
+} 
+else if (currentLicense?.code) {
+def code = currentLicense.code.toString().toLowerCase()
+if (code.contains('notlicensed')) {
+return ['NOT_LICENSED', currentLicense.code]
+}
+def title = currentLicense?.title ?: currentLicense.code
+return ['LICENSED', title]
+} 
+else if (currentLicense?.title) {
+def title = currentLicense.title.toString().toLowerCase()
+if (title.contains('notlicensed') || title.contains('нелиценз')) {
+return ['NOT_LICENSED', currentLicense.title]
+}
+return ['LICENSED', currentLicense.title]
+}
+
+return ['LICENSED', currentLicense.toString()]
+
+} catch (Exception e) {
+say('d', "Ошибка проверки лицензии: ${e.message}")
+return ['ERROR', e.message]
+}
+}
+
+/* ═════ ОСНОВНОЙ ПРОЦЕСС ═════ */
+try {
+say('i', "╔════════════════════════════════════════════════════════════════╗")
+say('i', "║  ПРОВЕРКА ЛИЦЕНЗИЙ СОТРУДНИКОВ v1.0                          ║")
+say('i', "║  Naumen SD 4.17 | Безопасный режим (только чтение)          ║")
+say('i', "╚════════════════════════════════════════════════════════════════╝")
+say('i', "")
+
+def fioList = buildFioList(CSV_TEXT)
+say('i', "CSV: ${fioList.size()} сотрудников")
+say('i', "")
+
+if (fioList.isEmpty()) {
+say('w', "CSV пуст")
+return report.toString()
+}
+
+// Счетчики
+int processed = 0
+int notFound = 0
+int hasLicense = 0
+int noLicense = 0
+int notLicensed = 0
+int errors = 0
+
+// Списки для детального отчета
+def licensedList = []
+def notLicensedList = []
+def noLicenseList = []
+def notFoundList = []
+def errorList = []
+
+fioList.each { String fio ->
+processed++
+
+say('i', "═══════════════════════════════════════════════════════════════")
+say('i', "[${processed}/${fioList.size()}] Проверка: ${fio}")
+say('i', "═══════════════════════════════════════════════════════════════")
+
+// ПОИСК СОТРУДНИКА
+def emp = findEmployeeByFio(fio)
+if (!emp) {
+say('w', "  ОШИБКА: сотрудник не найден")
+notFound++
+notFoundList.add(fio)
+say('i', "")
+return
+}
+
+say('i', "  Найден: ${emp.title} (${emp.UUID})")
+
+// ПРОВЕРКА ЛИЦЕНЗИИ
+def licenseInfo = checkLicense(emp)
+def status = licenseInfo[0]
+def licenseValue = licenseInfo[1]
+
+say('i', "  Лицензия: ${licenseValue}")
+
+switch(status) {
+case 'LICENSED':
+say('i', "  Статус: ЕСТЬ ЛИЦЕНЗИЯ")
+hasLicense++
+licensedList.add([fio: emp.title, license: licenseValue])
+break
+case 'NOT_LICENSED':
+say('i', "  Статус: notLicensed")
+notLicensed++
+notLicensedList.add([fio: emp.title, license: licenseValue])
+break
+case 'NO_LICENSE':
+say('i', "  Статус: НЕТ лицензии")
+noLicense++
+noLicenseList.add([fio: emp.title, license: licenseValue])
+break
+case 'ERROR':
+say('w', "  Статус: ОШИБКА")
+errors++
+errorList.add([fio: emp.title, error: licenseValue])
+break
+default:
+say('w', "  Статус: НЕИЗВЕСТНО")
+errors++
+errorList.add([fio: emp.title, error: 'Unknown status'])
+}
+
+say('i', "")
+}
+
+// ИТОГОВАЯ СТАТИСТИКА
+say('i', "")
+say('i', "╔════════════════════════════════════════════════════════════════╗")
+say('i', "║                    ИТОГОВЫЙ ОТЧЁТ                            ║")
+say('i', "╚════════════════════════════════════════════════════════════════╝")
+say('i', "")
+say('i', "СВОДНАЯ СТАТИСТИКА:")
+say('i', "  Всего обработано: ${processed}")
+say('i', "  Не найдено: ${notFound}")
+say('i', "  С лицензией: ${hasLicense}")
+say('i', "  Без лицензии (notLicensed): ${notLicensed}")
+say('i', "  Нет лицензии (поле пустое): ${noLicense}")
+say('i', "  Ошибок: ${errors}")
+say('i', "")
+
+// ДЕТАЛЬНЫЕ СПИСКИ
+if (licensedList.size() > 0) {
+say('i', "╔════════════════════════════════════════════════════════════════╗")
+say('i', "║  СОТРУДНИКИ С ЛИЦЕНЗИЕЙ (${hasLicense})                                  ║")
+say('i', "╚════════════════════════════════════════════════════════════════╝")
+licensedList.each { item ->
+say('i', "  ФИО: ${item.fio}")
+say('i', "    Лицензия: ${item.license}")
+say('i', "")
+}
+}
+
+if (notLicensedList.size() > 0) {
+say('i', "╔════════════════════════════════════════════════════════════════╗")
+say('i', "║  СОТРУДНИКИ БЕЗ ЛИЦЕНЗИИ - notLicensed (${notLicensed})                  ║")
+say('i', "╚════════════════════════════════════════════════════════════════╝")
+notLicensedList.each { item ->
+say('i', "  ФИО: ${item.fio}")
+say('i', "")
+}
+}
+
+if (noLicenseList.size() > 0) {
+say('i', "╔════════════════════════════════════════════════════════════════╗")
+say('i', "║  СОТРУДНИКИ БЕЗ ПОЛЯ ЛИЦЕНЗИИ (${noLicense})                            ║")
+say('i', "╚════════════════════════════════════════════════════════════════╝")
+noLicenseList.each { item ->
+say('i', "  ФИО: ${item.fio}")
+say('i', "")
+}
+}
+
+if (notFoundList.size() > 0) {
+say('i', "╔════════════════════════════════════════════════════════════════╗")
+say('i', "║  НЕ НАЙДЕНЫ (${notFound})                                               ║")
+say('i', "╚════════════════════════════════════════════════════════════════╝")
+notFoundList.each { fio ->
+say('i', "  ${fio}")
+}
+say('i', "")
+}
+
+if (errorList.size() > 0) {
+say('i', "╔════════════════════════════════════════════════════════════════╗")
+say('i', "║  ОШИБКИ (${errors})                                                     ║")
+say('i', "╚════════════════════════════════════════════════════════════════╝")
+errorList.each { item ->
+say('i', "  ФИО: ${item.fio}")
+say('i', "    Ошибка: ${item.error}")
+say('i', "")
+}
+}
+
+say('i', "ЗАВЕРШЕНО")
+
+} catch (Exception e) {
+say('e', "!!! КРИТИЧЕСКАЯ ОШИБКА !!!")
+say('e', "${e.class.name}: ${e.message}")
+try {
+e.getStackTrace().take(5).each { trace -> say('e', "  ${trace}") }
+} catch (Exception ignore) {}
+}
+
+return report.toString()
