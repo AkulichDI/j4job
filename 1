@@ -1,46 +1,29 @@
-// ========================================
-// СКРИПТ СОХРАНЕНИЯ СТАТУСА ПРИ СМЕНЕ ТИПА
-// Событие: Изменение объекта
-// ========================================
-
 try {
-    logger.info("=== Проверка сохранения статуса ===")
-    
-    // ВАЖНО: Используем safe navigation и getAttrValue
     def currentState = subject.state
-    if (currentState == null) {
-        logger.info("Статус не установлен, выход")
-        return
-    }
+    if (!currentState) return
     
-    def stateCode = currentState?.code
-    logger.info("Текущий статус: ${stateCode}")
+    // Сохраняем UUID текущего статуса в строку
+    def statusUUID = currentState.UUID
     
-    // Получаем сохраненный статус
-    def preservedStatus = subject.getAttrValue('preservedStatus')
+    // Создайте атрибут preservedStatusUUID типа "Строка"
+    def saved = subject.preservedStatusUUID
     
-    // ВАРИАНТ 1: Восстановление статуса
-    if (stateCode == 'registered' && preservedStatus != null) {
-        logger.info("Обнаружен сохраненный статус: ${preservedStatus.code}")
-        
+    if (saved && saved != statusUUID) {
+        // Получаем сохраненный статус по UUID
+        def savedState = utils.get(saved)
+        if (savedState) {
+            utils.edit(subject.UUID, [
+                state: savedState,
+                preservedStatusUUID: null
+            ])
+        }
+    } else {
+        // Сохраняем UUID
         utils.edit(subject.UUID, [
-            state: preservedStatus,
-            preservedStatus: null
-        ])
-        
-        logger.info("Статус восстановлен: ${preservedStatus.code}")
-    }
-    // ВАРИАНТ 2: Сохранение статуса
-    else if (stateCode != 'registered') {
-        logger.info("Сохраняем текущий статус: ${stateCode}")
-        
-        utils.edit(subject.UUID, [
-            preservedStatus: currentState
+            preservedStatusUUID: statusUUID
         ])
     }
-    
-    logger.info("=== Конец проверки ===")
     
 } catch (Exception e) {
-    logger.error("ОШИБКА: ${e.message}", e)
+    logger.error("Error: ${e.message}", e)
 }
