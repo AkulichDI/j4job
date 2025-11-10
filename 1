@@ -1,29 +1,21 @@
-try {
-    def currentState = subject.state
-    if (!currentState) return
-    
-    // Сохраняем UUID текущего статуса в строку
-    def statusUUID = currentState.UUID
-    
-    // Создайте атрибут preservedStatusUUID типа "Строка"
-    def saved = subject.preservedStatusUUID
-    
-    if (saved && saved != statusUUID) {
-        // Получаем сохраненный статус по UUID
-        def savedState = utils.get(saved)
-        if (savedState) {
-            utils.edit(subject.UUID, [
-                state: savedState,
-                preservedStatusUUID: null
-            ])
-        }
-    } else {
-        // Сохраняем UUID
-        utils.edit(subject.UUID, [
-            preservedStatusUUID: statusUUID
-        ])
-    }
-    
-} catch (Exception e) {
-    logger.error("Error: ${e.message}", e)
-}
+// Скрипт на событии: "Изменение объекта" (после сохранения)
+// Цель: при смене типа запроса вернуть прежний статус (state).
+
+// 1) Тип изменился?
+def typeChanged = (subject?.serviceType?.id ?: 0) != (oldSubject?.serviceType?.id ?: 0)
+if (!typeChanged) return
+
+// 2) Прежний статус существует?
+def oldState = oldSubject?.state                    // ВАЖНО: берем сам объект статуса, а не code-строку
+if (oldState == null) return
+
+// 3) Система успела сбросить статус в "registered"?
+def isRegisteredNow = "registered".equalsIgnoreCase(subject?.state?.code ?: "")
+if (!isRegisteredNow) return
+
+// 4) Уже и так прежний? — ничего не делаем
+if (subject?.state?.id == oldState?.id) return
+
+// 5) Вернём прежний статус
+utils.edit(subject, [ state: oldState ])
+// Повторного срабатывания цикла не будет, т.к. при следующем апдейте typeChanged = false.
