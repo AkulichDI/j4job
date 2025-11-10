@@ -26,41 +26,14 @@
             <version>3.24.2</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.2.5</version>
+        </dependency>
+
 
     </dependencies>
 
 </project>
 
-
-cat > bootstrap_schema.rb <<'RUBY'
-require 'yaml'
-require 'active_record'
-env = ENV['R_ENV'] || 'production'
-cfg = YAML.load_file('config/database.yml')[env]
-ActiveRecord::Base.establish_connection(cfg)
-load 'db/schema.rb'   # применит определения таблиц (в т.ч. settings)
-puts "Schema loaded for #{env}"
-RUBY
-
-# выполнить загрузку схемы (ТУТ НИЧЕГО не грузится из Redmine)
-ruby bootstrap_schema.rb
-# зависимости на всякий
-gem install bundler --no-document || true
-export BUNDLE_IGNORE_CONFIG=1
-bundle config unset deployment || true
-bundle config unset frozen || true
-bundle config set path vendor/bundle
-bundle install --without development test
-
-# миграции ядра (теперь таблица settings уже есть)
-RAILS_ENV=production bundle exec rake db:migrate
-
-# вернуть плагины и мигрировать их
-mv plugins.off/* plugins/ 2>/dev/null || true
-rmdir plugins.off 2>/dev/null || true
-bundle install --without development test
-RAILS_ENV=production bundle exec rake redmine:plugins:migrate
-
-# ассеты + мягкий рестарт
-bundle exec rake assets:precompile RAILS_ENV=production
-[ -d tmp ] && touch tmp/restart.txt || true
