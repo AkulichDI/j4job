@@ -1,72 +1,46 @@
-// ================================================
-// СКРИПТ СОХРАНЕНИЯ СТАТУСА ПРИ СМЕНЕ ТИПА ЗАПРОСА
+// ========================================
+// СКРИПТ СОХРАНЕНИЯ СТАТУСА ПРИ СМЕНЕ ТИПА
 // Событие: Изменение объекта
-// ================================================
+// ========================================
 
 try {
-    logger.info("=== Начало проверки сохранения статуса ===")
-    logger.info("UUID запроса: ${subject.UUID}")
+    logger.info("=== Проверка сохранения статуса ===")
     
-    // ПРАВИЛЬНОЕ получение текущего типа запроса
-    def currentServiceCall = subject.serviceCall
-    if (currentServiceCall == null) {
-        logger.info("Тип запроса не установлен, выход")
-        return
-    }
-    logger.info("Тип запроса: ${currentServiceCall.code}")
-    
-    // ПРАВИЛЬНОЕ получение текущего статуса
+    // ВАЖНО: Используем safe navigation и getAttrValue
     def currentState = subject.state
     if (currentState == null) {
         logger.info("Статус не установлен, выход")
         return
     }
     
-    // ВАЖНО: получаем код статуса напрямую через метод
-    def currentStateCode = currentState.code
-    logger.info("Текущий статус код: ${currentStateCode}")
-    logger.info("Текущий статус UUID: ${currentState.UUID}")
+    def stateCode = currentState?.code
+    logger.info("Текущий статус: ${stateCode}")
     
-    // Получаем сохранённый статус (если есть)
-    // Внимание: preservedStatus должен быть создан как атрибут типа "Ссылка на объект"
-    def preservedStatus = subject.preservedStatus
+    // Получаем сохраненный статус
+    def preservedStatus = subject.getAttrValue('preservedStatus')
     
     // ВАРИАНТ 1: Восстановление статуса
-    // Проверяем, что текущий статус = "registered" И есть сохранённый статус
-    if (currentStateCode == 'registered' && preservedStatus != null) {
+    if (stateCode == 'registered' && preservedStatus != null) {
+        logger.info("Обнаружен сохраненный статус: ${preservedStatus.code}")
         
-        def preservedCode = preservedStatus.code
-        logger.info("Обнаружен сохранённый статус для восстановления: ${preservedCode}")
-        
-        // Восстанавливаем статус
         utils.edit(subject.UUID, [
             state: preservedStatus,
-            preservedStatus: null  // Очищаем после использования
+            preservedStatus: null
         ])
         
-        logger.info("Статус успешно восстановлен: ${preservedCode}")
+        logger.info("Статус восстановлен: ${preservedStatus.code}")
+    }
+    // ВАРИАНТ 2: Сохранение статуса
+    else if (stateCode != 'registered') {
+        logger.info("Сохраняем текущий статус: ${stateCode}")
         
-    } 
-    // ВАРИАНТ 2: Сохранение текущего статуса
-    // Если статус НЕ "registered", сохраняем его на случай смены типа
-    else if (currentStateCode != 'registered') {
-        
-        logger.info("Сохранение текущего статуса: ${currentStateCode}")
-        
-        // Сохраняем текущий статус
         utils.edit(subject.UUID, [
             preservedStatus: currentState
         ])
-        
-        logger.info("Статус сохранён")
-    } else {
-        logger.info("Нет действий для выполнения")
     }
     
     logger.info("=== Конец проверки ===")
     
 } catch (Exception e) {
-    logger.error("ОШИБКА в скрипте сохранения статуса: ${e.message}", e)
-    // Выводим полный stack trace для отладки
-    e.printStackTrace()
+    logger.error("ОШИБКА: ${e.message}", e)
 }
