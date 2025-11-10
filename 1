@@ -1,21 +1,21 @@
-// Скрипт на событии: "Изменение объекта" (после сохранения)
-// Цель: при смене типа запроса вернуть прежний статус (state).
+// Изменение объекта (после сохранения)
+def codeOf = { val ->                      // безопасно получаем код статуса
+    if (val == null) return null
+    (val instanceof String) ? val : val?.code
+}
 
-// 1) Тип изменился?
+// 1) Тип запроса действительно поменяли?
 def typeChanged = (subject?.serviceType?.id ?: 0) != (oldSubject?.serviceType?.id ?: 0)
 if (!typeChanged) return
 
-// 2) Прежний статус существует?
-def oldState = oldSubject?.state                    // ВАЖНО: берем сам объект статуса, а не code-строку
-if (oldState == null) return
+// 2) Был ли предыдущий статус?
+def oldStateObj  = oldSubject?.state       // берем сам объект статуса!
+if (oldStateObj == null) return
 
-// 3) Система успела сбросить статус в "registered"?
-def isRegisteredNow = "registered".equalsIgnoreCase(subject?.state?.code ?: "")
-if (!isRegisteredNow) return
+// 3) Сейчас статус сброшен в registered?
+def nowCode = codeOf(subject?.state)
+if (!"registered".equalsIgnoreCase(nowCode)) return
 
-// 4) Уже и так прежний? — ничего не делаем
-if (subject?.state?.id == oldState?.id) return
-
-// 5) Вернём прежний статус
-utils.edit(subject, [ state: oldState ])
-// Повторного срабатывания цикла не будет, т.к. при следующем апдейте typeChanged = false.
+// 4) Вернем прежний статус (объект)
+utils.edit(subject, [ state: oldStateObj ])
+// На втором проходе тип уже не меняется => typeChanged=false => выходим сразу.
