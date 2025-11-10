@@ -1,30 +1,37 @@
-// Сохраняем статус при смене типа запроса
-// Работает в обработчике "изменение объекта (заявки)"
+// Скрипт для события "Изменение объекта" на классе Запрос
+// Событие: Изменение объекта
+// Условие срабатывания: всегда
 
-if (!changedAttributes?.contains('serviceType')) return           // интересует только смена типа
-if (changedAttributes?.contains('state')) return                  // защита от повторного запуска
+// Получаем текущее состояние запроса
+def currentState = subject.state
+def currentStateCode = currentState?.code
 
-def oldCode = oldSubject?.state?.code
-if (!oldCode) return
+logger.info("=== Контроль статуса при изменении типа ===")
+logger.info("UUID запроса: ${subject.UUID}")
+logger.info("Текущий статус: ${currentStateCode}")
+logger.info("Текущий тип запроса: ${subject.serviceCall?.code}")
 
-// если система уже сама оставила нужный статус — ничего не делаем
-if (subject?.state?.code?.equalsIgnoreCase(oldCode)) return
-
-// Берём процесс (жизненный цикл) НОВОЙ модели из текущего статуса (обычно "registered")
-def newProcess = subject?.state?.process   // в некоторых инсталляциях: subject.state.workflow / lifeCycle
-
-// Ищем в НОВОЙ модели статус с таким же code
-def newState = newProcess
-    ? dsl.select("select s from State s where s.code = :code and s.process = :proc",
-                 [code: oldCode, proc: newProcess]).stream().findFirst().orElse(null)
-    : dsl.select("select s from State s where s.code = :code",
-                 [code: oldCode]).stream().findFirst().orElse(null)
-
-if (!newState) return  // в новой модели нет эквивалентного статуса — оставляем "registered"
-
-// Меняем статус без повторного срабатывания триггеров (если утилита доступна)
-def doEdit = { utils.edit(subject) { it.state = newState } }
-if (utils.metaClass.respondsTo(utils, 'withoutTriggers')) utils.withoutTriggers(doEdit) else doEdit()
-
-// (необязательно) лог:
-// logger.info "Сохранил статус по коду '${oldCode}' после смены типа → ${subject.state?.code}"
+// Проверяем, не сброшен ли статус в "Зарегистрирован"
+// при том что запрос уже был в работе
+if (currentStateCode == 'registered') {
+    
+    // Получаем объект заново из БД для проверки реального состояния
+    def requestFromDB = utils.get(subject.UUID)
+    
+    // Проверяем историю статусов через связанные объекты
+    // или используем дополнительное поле для хранения "желаемого" статуса
+    
+    def targetState = subject.getAttrValue('targetStateAfterReclassification')
+    
+    if (targetState != null && targetState.code != 'registered') {
+        logger.info("Обнаружен целевой статус для восстановления: ${targetState.code}")
+        
+        // Устанавливаем нужный статус
+        utils.edit(subject.UUID, [
+            state: targetState,
+            targetStateAfterReclassification: null  // Очищаем после использования
+        ])
+        
+        logger.info("Статус восстановлен: ${targetState.code}")
+    }
+}
