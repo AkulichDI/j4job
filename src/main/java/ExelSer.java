@@ -1,197 +1,211 @@
-import org.apache.poi.ss.usermodel.*;        // Apache POI classes for workbook, sheet, row, cell
+package your.pkg;
+
+import com.google.gson.Gson;
+import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
-import java.io.FileInputStream;
-import java.io.IOException;
+
+import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
-import com.google.gson.Gson;                 // Gson library for JSON serialization
+/**
+ * Excel (.xlsx) -> JSON[] батчами -> POST на ваш endpoint.
+ * Регулируемые BATCH_SIZE и PAUSE_MS, никакой бизнес-логики.
+ */
+public class ExcelBatchPoster {
 
-public class NaumenExcelUploader {
+    // ====== НАСТРОЙКИ (меняйте под себя) ======
+    static String EXCEL_FILE   = "C:/data/equipment.xlsx";
+    static String ENDPOINT_URL = "https://your-naumen/sd/services/rest/ingest";
 
-    // Настройки / конфигурационные параметры
-    private static String EXCEL_FILE_PATH = "C:/data/equipment.xlsx";   // Путь к Excel-файлу
-    private static String SERVER_URL    = "http://your-naumen-server/sd/"; // Адрес Naumen SD (заканчивается на /sd/)
-    private static String OBJECT_CLASS  = "equipment";    // Код класса создаваемого объекта (пример)
-    private static String REST_METHOD   = "create";       // REST-метод для создания объекта
-    private static String ACCESS_KEY    = "YOUR_ACCESS_TOKEN_HERE"; // Токен доступа (Access Key) для API
-    private static int    BATCH_SIZE    = 100;    // Размер группы отправки (сколько записей отправлять за раз)
-    private static int    PAUSE_MS      = 1000;   // Пауза (мс) между группами запросов
+    // Токен: в заголовке (Authorization: Bearer ...) или в query (?accessKey=...)
+    static boolean TOKEN_IN_HEADER   = true;
+    static String  TOKEN             = "PASTE_YOUR_TOKEN";
+    static String  TOKEN_QUERY_PARAM = "accessKey";
+
+    // Регулировка нагрузки
+    static int  BATCH_SIZE = 100;  // сколько строк в одном POST
+    static long PAUSE_MS   = 800;  // пауза между батчами (мс)
+
+    // (опционально) лёгкий ретрай на 429/5xx
+    static int  MAX_RETRIES     = 2;
+    static long RETRY_BACKOFFMS = 600;
+
+    static final Gson GSON = new Gson();
 
     public static void main(String[] args) {
-        // 1. Чтение данных из Excel-файла
-        List<Map<String, Object>> records;
+        // Позволяем задавать часть настроек через аргументы/ENV (необязательно)
+        // args: <excelPath> <endpointUrl> <batchSize> <pauseMs>
+        if (args.length > 0) EXCEL_FILE = args[0];
+        if (args.length > 1) ENDPOINT_URL = args[1];
+        if (args.length > 2) BATCH_SIZE = Integer.parseInt(args[2]);
+        if (args.length > 3) PAUSE_MS = Long.parseLong(args[3]);
+
+        // ENV-переменные тоже можно использовать (если удобно)
+        String envToken = System.getenv("NAUMEN_TOKEN");
+        if (envToken != null && !envToken.isBlank()) TOKEN = envToken;
+
         try {
-            records = readExcelFile(EXCEL_FILE_PATH);
-        } catch (IOException | InvalidFormatException e) {
-            System.err.println("Ошибка чтения Excel-файла: " + e.getMessage());
-            return;
-        }
+            // 1) читаем Excel
+            List<Map<String, String>> rows = readXlsxAsMaps(EXCEL_FILE);
+            System.out.println("Строк прочитано: " + rows.size());
+            if (rows.isEmpty()) return;
 
-        // 2. Отправка данных на сервер Naumen в виде JSON через REST API
-        sendRecordsToNaumen(records);
+            // 2) режем на батчи
+            List<List<Map<String, String>>> batches = slice(rows, BATCH_SIZE);
+            int total = batches.size();
+
+            // 3) шлём по очереди
+            for (int i = 0; i < total; i++) {
+                List<Map<String, String>> batch = batches.get(i);
+                String payload = GSON.toJson(batch);
+                String url = appendTokenIfNeeded(ENDPOINT_URL);
+
+                System.out.printf("POST batch %d/%d (size=%d)%n", i + 1, total, batch.size());
+                boolean ok = postWithRetry(url, payload);
+                if (!ok) {
+                    System.err.println("Батч не доставлен после ретраев. Останавливаюсь.");
+                    break; // или continue — по вашей политике
+                }
+
+                if (i < total - 1) {
+                    try { Thread.sleep(PAUSE_MS); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+                }
+            }
+
+            System.out.println("Готово.");
+        } catch (Exception e) {
+            e.printStackTrace();
+            System.err.println("Ошибка: " + e.getMessage());
+        }
     }
 
-    /**
-     * Считывает Excel-файл и возвращает список записей.
-     * Каждая запись представлена как Map "название атрибута -> значение".
-     */
-    private static List<Map<String, Object>> readExcelFile(String filePath) throws IOException, InvalidFormatException {
-        List<Map<String, Object>> recordList = new ArrayList<>();
+    // ============ Excel ============
 
-        // Открываем Excel-файл с помощью Apache POI
-        try (FileInputStream fis = new FileInputStream(filePath);
-             Workbook workbook = WorkbookFactory.create(fis)) {
-            Sheet sheet = workbook.getSheetAt(0);  // Берём первую страницу (лист) в книге
+    // Первая строка — заголовки; дальше — данные; всё -> String
+    static List<Map<String, String>> readXlsxAsMaps(String path) throws IOException {
+        List<Map<String, String>> out = new ArrayList<>();
+        try (InputStream in = new FileInputStream(path);
+             Workbook wb = new XSSFWorkbook(in)) {
 
-            if (sheet == null) {
-                return recordList;  // пустой список, если лист не найден
+            Sheet sh = wb.getSheetAt(0);
+            if (sh == null) return out;
+
+            Row header = sh.getRow(0);
+            if (header == null) return out;
+
+            int cols = header.getLastCellNum();
+            String[] names = new String[cols];
+            DataFormatter fmt = new DataFormatter();
+
+            for (int c = 0; c < cols; c++) {
+                names[c] = fmt.formatCellValue(header.getCell(c)).trim();
+                if (names[c].isEmpty()) names[c] = "Column" + (c + 1);
             }
 
-            // Получаем заголовки столбцов из первой строки (для имен полей)
-            Row headerRow = sheet.getRow(0);
-            if (headerRow == null) {
-                return recordList;  // если файл пустой или без заголовка
-            }
-            int colCount = headerRow.getLastCellNum();
-            String[] headers = new String[colCount];
-            for (int c = 0; c < colCount; c++) {
-                Cell cell = headerRow.getCell(c);
-                if (cell != null) {
-                    headers[c] = cell.toString().trim();  // берём текстовое значение заголовка (обрезая пробелы)
-                } else {
-                    headers[c] = "Column" + (c + 1);      // имя по умолчанию, если ячейка пуста
-                }
-            }
+            for (int r = 1; r <= sh.getLastRowNum(); r++) {
+                Row row = sh.getRow(r);
+                if (row == null) continue;
 
-            // Проходим по всем строкам ниже заголовка и считываем значения
-            int lastRowNum = sheet.getLastRowNum();
-            for (int r = 1; r <= lastRowNum; r++) {
-                Row row = sheet.getRow(r);
-                if (row == null) {
-                    continue; // пропускаем пустые строки
+                Map<String, String> m = new LinkedHashMap<>();
+                boolean allEmpty = true;
+
+                for (int c = 0; c < cols; c++) {
+                    String val = fmt.formatCellValue(row.getCell(c)).trim();
+                    if (!val.isEmpty()) allEmpty = false;
+                    m.put(names[c], val);
                 }
-                Map<String, Object> record = new LinkedHashMap<>();  // одна запись (оборудование)
-                // Считываем по каждому столбцу в этой строке
-                for (int c = 0; c < colCount; c++) {
-                    Cell cell = row.getCell(c);
-                    Object value;
-                    if (cell == null) {
-                        value = "";  // если ячейка пуста, сохраним пустую строку
-                    } else {
-                        // Определяем тип ячейки и получаем значение соответствующего типа
-                        switch (cell.getCellType()) {
-                            case STRING:
-                                value = cell.getStringCellValue().trim();
-                                break;
-                            case NUMERIC:
-                                // Если число представляет дату, преобразуем в дату; иначе – в числовой тип
-                                if (DateUtil.isCellDateFormatted(cell)) {
-                                    value = cell.getDateCellValue();  // Date объект (можно форматировать по необходимости)
-                                } else {
-                                    // По умолчанию считываем как Double. Если это целое число, можно привести к Long.
-                                    double numericVal = cell.getNumericCellValue();
-                                    // Проверка на целочисленность
-                                    if (numericVal == (long) numericVal) {
-                                        value = (long) numericVal;
-                                    } else {
-                                        value = numericVal;
-                                    }
-                                }
-                                break;
-                            case BOOLEAN:
-                                value = cell.getBooleanCellValue();
-                                break;
-                            case FORMULA:
-                                // Получаем результат формулы (как текст или число)
-                                CellType formulaResultType = cell.getCachedFormulaResultType();
-                                if (formulaResultType == CellType.NUMERIC) {
-                                    value = cell.getNumericCellValue();
-                                } else if (formulaResultType == CellType.STRING) {
-                                    value = cell.getStringCellValue().trim();
-                                } else {
-                                    value = cell.toString();
-                                }
-                                break;
-                            case BLANK:
-                                value = "";
-                                break;
-                            default:
-                                value = cell.toString().trim();
-                        }
-                    }
-                    // Сохраняем значение в Map с ключом из заголовка
-                    String fieldName = headers[c];
-                    record.put(fieldName, value);
-                }
-                recordList.add(record);
+                if (!allEmpty) out.add(m); // пропускаем полностью пустые строки
             }
         }
-        return recordList;
+        return out;
     }
 
-    /**
-     * Отправляет список записей (список Map-ов) в Naumen Service Desk через REST API.
-     * Отправка выполняется пакетами (batch) с паузами между ними, чтобы снизить нагрузку на сервер.
-     */
-    private static void sendRecordsToNaumen(List<Map<String, Object>> records) {
-        if (records.isEmpty()) {
-            System.out.println("Нет данных для отправки.");
-            return;
+    // ============ batching utils ============
+    static <T> List<List<T>> slice(List<T> src, int size) {
+        List<List<T>> res = new ArrayList<>();
+        for (int i = 0; i < src.size(); i += size) {
+            res.add(src.subList(i, Math.min(i + size, src.size())));
         }
+        return res;
+    }
 
-        Gson gson = new Gson();  // объект для преобразования в JSON
-        int total = records.size();
-        int sentCount = 0;
-        for (Map<String, Object> record : records) {
-            sentCount++;
-            // Формируем JSON строку из записи
-            String jsonData = gson.toJson(record);
+    // ============ HTTP ============
+
+    static boolean postWithRetry(String url, String json) {
+        int attempts = 0;
+        long backoff = RETRY_BACKOFFMS;
+
+        while (true) {
+            attempts++;
             try {
-                // Формируем URL запроса с указанием метода, класса объекта и токена доступа
-                String requestUrl = SERVER_URL + "services/rest/" + REST_METHOD + "/" + OBJECT_CLASS 
-                                     + "?accessKey=" + ACCESS_KEY;
-                URL url = new URL(requestUrl);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("POST");
-                conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
-                conn.setDoOutput(true);
+                int code = postJson(url, json);
+                if (code >= 200 && code < 300) return true;
 
-                // Отправляем JSON-данные в тело POST-запроса
-                byte[] out = jsonData.getBytes(StandardCharsets.UTF_8);
-                conn.getOutputStream().write(out);
-                // Получаем ответ (код HTTP)
-                int responseCode = conn.getResponseCode();
-                if (responseCode >= 200 && responseCode < 300) {
-                    System.out.println("Запись " + sentCount + " из " + total + " успешно отправлена (HTTP " + responseCode + ").");
-                } else {
-                    System.err.println("Ошибка при отправке записи " + sentCount + ". Код ответа: " + responseCode);
+                // Ретраим только 429/5xx
+                if (code == 429 || (code >= 500 && code < 600)) {
+                    if (attempts > MAX_RETRIES) return false;
+                    System.err.println("HTTP " + code + ", retry " + attempts + " after " + backoff + " ms");
+                    try { Thread.sleep(backoff); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); return false; }
+                    backoff *= 2;
+                    continue;
                 }
-                conn.disconnect();  // закрываем соединение
+                // Остальное — не ретраим
+                System.err.println("HTTP " + code + ", без ретрая.");
+                return false;
 
             } catch (IOException e) {
-                System.err.println("Исключение при отправке записи " + sentCount + ": " + e.getMessage());
+                if (attempts > MAX_RETRIES) {
+                    System.err.println("IO error: " + e.getMessage());
+                    return false;
+                }
+                System.err.println("IO error, retry " + attempts + " after " + backoff + " ms: " + e.getMessage());
+                try { Thread.sleep(backoff); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); return false; }
+                backoff *= 2;
             }
+        }
+    }
 
-            // Если достигли размера батча, делаем паузу перед отправкой следующей группы
-            if (sentCount % BATCH_SIZE == 0) {
-                try {
-                    System.out.println("Пауза " + PAUSE_MS + " мс после отправки " + sentCount + " записей...");
-                    Thread.sleep(PAUSE_MS);
-                } catch (InterruptedException ie) {
-                    // Восстанавливаем прерванный статус потока и выходим, если поток прерван
-                    Thread.currentThread().interrupt();
-                    System.err.println("Выполнение прервано во время паузы.");
-                    break;
+    static int postJson(String url, String json) throws IOException {
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        c.setRequestMethod("POST");
+        c.setDoOutput(true);
+        c.setConnectTimeout(15000);
+        c.setReadTimeout(60000);
+        c.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+
+        if (TOKEN_IN_HEADER) {
+            c.setRequestProperty("Authorization", "Bearer " + TOKEN);
+        }
+
+        try (OutputStream os = c.getOutputStream()) {
+            os.write(json.getBytes(StandardCharsets.UTF_8));
+        }
+
+        int code = c.getResponseCode();
+        try (InputStream is = code < 400 ? c.getInputStream() : c.getErrorStream()) {
+            if (is != null) {
+                byte[] bytes = is.readAllBytes();
+                String body = new String(bytes, StandardCharsets.UTF_8);
+                if (!body.isBlank()) {
+                    System.out.println("Ответ: " + (body.length() > 500 ? body.substring(0, 500) + "..." : body));
                 }
             }
         }
-        System.out.println("Отправка завершена. Всего обработано записей: " + sentCount);
+        c.disconnect();
+        return code;
+    }
+
+    static String appendTokenIfNeeded(String url) {
+        if (TOKEN_IN_HEADER) return url;
+        String delim = url.contains("?") ? "&" : "?";
+        return url + delim + TOKEN_QUERY_PARAM + "=" + encode(TOKEN);
+    }
+
+    static String encode(String s) {
+        try { return java.net.URLEncoder.encode(s, StandardCharsets.UTF_8); }
+        catch (Exception e) { return s; }
     }
 }
