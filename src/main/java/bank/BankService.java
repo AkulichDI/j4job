@@ -12,16 +12,33 @@ public class BankService {
         users.putIfAbsent(user, new ArrayList<Account>());
     }
     public void deleteUser(String passport) {
-
+        users.remove(findByPassport(passport));
     }
     public void addAccount(String passport, Account account) {
-
+       if (findByPassport(passport) != null ) {
+          List<Account> accounts =  users.get(findByPassport(passport));
+           accounts.add(account);
+       }
     }
     public User findByPassport(String passport) {
+        for (User user : users.keySet()){
+            if (user.getPassport().equals(passport)){
+                return user;
+            }
+        }
         return null;
     }
 
     public Account findByRequisite(String passport, String requisite) {
+        if(findByPassport(passport) != null){
+            List<Account> accounts = users.get(findByPassport(passport));
+            for (Account account : accounts){
+                if ( account.getRequisite().equals(requisite) )
+                    return account;
+
+            }
+        }
+
         return null;
     }
     public boolean transferMoney(String sourcePassport, String sourceRequisite,
