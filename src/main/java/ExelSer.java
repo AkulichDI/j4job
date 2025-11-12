@@ -7,48 +7,68 @@ import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.HttpsURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.util.*;
 
-public class ExcelBatchPosterSimple {
+public class ExcelToExecPost {
 
-    // ==== настройка ====
-    static String EXCEL_FILE   = "C:/data/equipment.xlsx";
-    static String ENDPOINT_URL = "https://host/path/to/module?param=..."; // <-- ваш URL из curl
-    static int    BATCH_SIZE   = 100;      // регулируйте под сервер
-    static long   PAUSE_MS     = 800;      // пауза между батчами
-    static boolean TRUST_ALL_SSL = true;   // аналог curl -k (НЕБЕЗОПАСНО, только если нужно)
+    // === ВАШИ НАСТРОЙКИ ===
+    static String EXCEL_FILE = "C:/data/equipment.xlsx";
 
-    // Если нужен токен/другие заголовки — добавьте сюда:
-    static Map<String,String> EXTRA_HEADERS = Map.of(
-        "Content-Type", "application/json"
-        // ,"Authorization", "Bearer YOUR_TOKEN"
-    );
+    // База из curl:
+    static String BASE_EXEC_POST = "https://172.16.3.107:8080/sd/services/rest/exec-post";
+    static String ACCESS_KEY     = "PASTE_YOUR_ACCESS_KEY"; // то, что стоит после accessKey=
+    static String FUNC           = "modules.apiMigrationITop.migration";
+
+    // Нагрузка
+    static int  BATCH_SIZE  = 100;   // регулируйте под сервер
+    static long PAUSE_MS    = 800;   // пауза между батчами
+    static int  URL_LIMIT   = 6000;  // защитный лимит длины URL (можно 4000–8000; зависит от прокси/серверов)
+
+    // SSL как curl -k
+    static boolean TRUST_ALL_SSL = true;
 
     static final Gson GSON = new Gson();
 
     public static void main(String[] args) {
         try {
-            if (TRUST_ALL_SSL) trustAllSsl();   // эквивалент curl -k
+            if (TRUST_ALL_SSL) trustAllSsl();
 
+            // 1) читаем Excel
             List<Map<String, String>> rows = readXlsxAsMaps(EXCEL_FILE);
-            List<List<Map<String, String>>> batches = slice(rows, BATCH_SIZE);
+            if (rows.isEmpty()) {
+                System.out.println("Excel пуст или не прочитан.");
+                return;
+            }
+            System.out.println("Строк прочитано: " + rows.size());
 
+            // 2) батчинг с авто-уменьшением, если URL слишком длинный
+            List<List<Map<String, String>>> batches = makeBatchesByUrlLimit(rows, BATCH_SIZE, URL_LIMIT);
+
+            // 3) отправка
             for (int i = 0; i < batches.size(); i++) {
-                String payload = GSON.toJson(batches.get(i));   // массив записей
-                int code = postJson(ENDPOINT_URL, payload, EXTRA_HEADERS);
-                System.out.printf("Batch %d/%d -> HTTP %d%n", i+1, batches.size(), code);
+                List<Map<String, String>> batch = batches.get(i);
+                String json = GSON.toJson(batch);             // это тот самый %json_text%
+                String url  = buildExecPostUrl(json);         // ...&params='%json_text%'
+
+                System.out.printf("POST batch %d/%d (size=%d) urlLen=%d%n",
+                        i + 1, batches.size(), batch.size(), url.length());
+
+                int code = postEmptyBody(url); // тело пустое — всё в query, как в curl
+                System.out.println("HTTP " + code);
                 if (i < batches.size() - 1) Thread.sleep(PAUSE_MS);
             }
-            System.out.println("Done.");
+
+            System.out.println("Готово.");
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-    // ===== Excel (.xlsx): первая строка — заголовки =====
+    // ====== Excel чтение: всё строками, первая строка — заголовки ======
     static List<Map<String, String>> readXlsxAsMaps(String path) throws IOException {
         List<Map<String, String>> out = new ArrayList<>();
         try (InputStream in = new FileInputStream(path);
@@ -72,12 +92,14 @@ public class ExcelBatchPosterSimple {
             for (int r = 1; r <= sh.getLastRowNum(); r++) {
                 Row row = sh.getRow(r);
                 if (row == null) continue;
+
                 Map<String, String> m = new LinkedHashMap<>();
                 boolean allEmpty = true;
+
                 for (int c = 0; c < cols; c++) {
-                    String val = fmt.formatCellValue(row.getCell(c)).trim();
-                    if (!val.isEmpty()) allEmpty = false;
-                    m.put(names[c], val);
+                    String v = fmt.formatCellValue(row.getCell(c)).trim();
+                    if (!v.isEmpty()) allEmpty = false;
+                    m.put(names[c], v);
                 }
                 if (!allEmpty) out.add(m);
             }
@@ -85,42 +107,80 @@ public class ExcelBatchPosterSimple {
         return out;
     }
 
-    // ===== POST JSON =====
-    static int postJson(String url, String json, Map<String,String> headers) throws IOException {
+    // ====== Построение URL под ваш exec-post ======
+    // Итог: https://.../exec-post?accessKey=...&func=...&params='%JSON...%'
+    static String buildExecPostUrl(String jsonText) throws UnsupportedEncodingException {
+        StringBuilder sb = new StringBuilder(BASE_EXEC_POST);
+        char join = BASE_EXEC_POST.contains("?") ? '&' : '?';
+        sb.append(join).append("accessKey=").append(encode(ACCESS_KEY));
+        sb.append("&func=").append(encode(FUNC));
+
+        // важный момент: модулю нужен формат params='%json_text%'
+        // т.е. value = "'" + json + "'"
+        String paramsValue = "'" + jsonText + "'";
+        sb.append("&params=").append(encode(paramsValue));
+        return sb.toString();
+    }
+
+    static String encode(String s) throws UnsupportedEncodingException {
+        return URLEncoder.encode(s, StandardCharsets.UTF_8.toString());
+    }
+
+    // ====== Отправка POST с пустым телом (как curl -X POST без --data) ======
+    static int postEmptyBody(String url) throws IOException {
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         c.setRequestMethod("POST");
-        c.setDoOutput(true);
         c.setConnectTimeout(15000);
         c.setReadTimeout(60000);
+        // как в curl: -H "Content-Type: application/json"
+        c.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
 
-        // заголовки из curl
-        for (var e : headers.entrySet()) {
-            c.setRequestProperty(e.getKey(), e.getValue());
-        }
-
+        // тело пустое (zero-length), но это всё ещё POST:
+        c.setDoOutput(true);
         try (OutputStream os = c.getOutputStream()) {
-            os.write(json.getBytes(StandardCharsets.UTF_8));
+            // ничего не пишем намеренно
         }
-        int code = c.getResponseCode();
 
+        int code = c.getResponseCode();
         try (InputStream is = code < 400 ? c.getInputStream() : c.getErrorStream()) {
             if (is != null) {
                 String body = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-                if (!body.isBlank()) System.out.println("Response: " + body.substring(0, Math.min(600, body.length())));
+                if (!body.isBlank()) System.out.println("Response: " + (body.length() > 800 ? body.substring(0, 800) + "..." : body));
             }
         }
         c.disconnect();
         return code;
     }
 
-    // ===== batching =====
-    static <T> List<List<T>> slice(List<T> src, int size) {
-        List<List<T>> res = new ArrayList<>();
-        for (int i = 0; i < src.size(); i += size) res.add(src.subList(i, Math.min(i + size, src.size())));
+    // ====== Автоподбор батча под ограничение длины URL ======
+    static List<List<Map<String, String>>> makeBatchesByUrlLimit(
+            List<Map<String, String>> rows, int startBatch, int urlLimit) throws UnsupportedEncodingException {
+
+        List<List<Map<String, String>>> res = new ArrayList<>();
+        int i = 0;
+        while (i < rows.size()) {
+            int size = Math.min(startBatch, rows.size() - i);
+            // уменьшаем, пока URL не влезает
+            while (size > 0) {
+                String json = GSON.toJson(rows.subList(i, i + size));
+                String url  = buildExecPostUrl(json);
+                if (url.length() <= urlLimit) break;
+                size = size / 2; // делим батч пополам
+            }
+            if (size == 0) {
+                // даже одна строка не влезла — это редкость; сообщим и попробуем отправить её отдельно
+                size = 1;
+                String url = buildExecPostUrl(GSON.toJson(rows.subList(i, i + 1)));
+                System.err.println("WARNING: URL длинее лимита (" + url.length() + " > " + urlLimit + ") даже для 1 записи.");
+                System.err.println("Рассмотрите уменьшение набора полей/короткие значения или другой способ передачи (тело POST).");
+            }
+            res.add(rows.subList(i, i + size));
+            i += size;
+        }
         return res;
     }
 
-    // ===== curl -k (доверять всем сертификатам) — используйте только в доверенной сети! =====
+    // ====== Эквивалент curl -k (использовать ТОЛЬКО в доверенной сети) ======
     static void trustAllSsl() throws Exception {
         TrustManager[] trustAll = new TrustManager[]{ new X509TrustManager() {
             public void checkClientTrusted(X509Certificate[] xcs, String a) {}
