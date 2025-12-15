@@ -10,7 +10,7 @@ public class Main {
 
 
 
-        for (int i = 0; i>5; i++){
+        for (int i = 0; i<5; i++){
             var runnable = new MyRunnable(i);
             var thread   = new Thread(runnable);
             thread.start();
