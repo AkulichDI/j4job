@@ -10,4 +10,8 @@ public class Task {
     }
     public String getNumber(){return number;}
     public String getDescription() {return description;    }
+
+    public int getPriority() {
+    return 0;
+    }
 }
