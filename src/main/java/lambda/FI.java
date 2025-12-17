@@ -13,7 +13,10 @@ public class FI {
         };
 
         Comparator<Attachment> comporatorText = (left , right ) -> left.getName().compareTo(right.getName());
-        Comparator<Attachment> comporatorDesc = (left, right) -> Integer.compare(right.getSize(), left.getSize());
+        Comparator<Attachment> comporatorDesc = (left, right) -> {
+            System.out.println("compare - " + left.getSize() + " : " + right.getSize());
+            return Integer.compare(right.getSize(), left.getSize());
+        };
        // Arrays.sort(attachments, comporatorText);
         Arrays.sort(attachments, comporatorDesc);
 
