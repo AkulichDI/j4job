@@ -37,7 +37,7 @@ public class LS1 {
 
         List<Integer> id = Arrays.asList(1, 2,3,5,6,7,8,9,0,12,43,65,765,6575,234,2345234,345);
         int idSum = id.stream()
-                .mapToInt(Integer::intValue)  // → IntStream
+                .mapToInt(Integer::intValue)
                 .sum();
 
         System.out.println(idSum);
