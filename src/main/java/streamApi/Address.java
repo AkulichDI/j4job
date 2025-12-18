@@ -17,6 +17,22 @@ public class Address {
     }
 
 
+    public int getApartment() {
+        return apartment;
+    }
+
+    public int getHome() {
+        return home;
+    }
+
+    public String getCity() {
+        return city;
+    }
+
+    public String getStreet() {
+        return street;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
