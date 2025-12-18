@@ -1,6 +1,7 @@
 package streamApi;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collector;
 import java.util.stream.Collectors;
@@ -34,11 +35,12 @@ public class LS1 {
         System.out.println(namesDimons);
 
 
+        List<Integer> id = Arrays.asList(1, 2,3,5,6,7,8,9,0,12,43,65,765,6575,234,2345234,345);
+        int idSum = id.stream()
+                .mapToInt(Integer::intValue)  // → IntStream
+                .sum();
 
-
-
-
-
+        System.out.println(idSum);
 
 
         System.out.println(namesOfDiiimon + "\nКоличество Димонов: "  +  countDimon);
