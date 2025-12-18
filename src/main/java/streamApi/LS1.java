@@ -27,6 +27,20 @@ public class LS1 {
                         .toList();
 
 
+        List<String> namesDimons = names.stream()
+                        .filter(name -> name.contains("im"))
+                                .distinct()
+                                        .toList();
+        System.out.println(namesDimons);
+
+
+
+
+
+
+
+
+
         System.out.println(namesOfDiiimon + "\nКоличество Димонов: "  +  countDimon);
     }
 
