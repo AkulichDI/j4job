@@ -2,6 +2,8 @@ package streamApi;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collector;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class LS1 {
@@ -13,8 +15,19 @@ public class LS1 {
                 .filter(name -> name.equals("Dima"))
                 .toList();
 
+        int countDimon = (int) names.stream()
+                        .filter(name -> name.equals("  Dima  "))
+                        .filter(name -> name.split(" ").length>0)
+                        .count();
 
-        System.out.println(namesOfDiiimon);
+
+        List<String> namesD = names.stream()
+                        .filter(name -> name.contains("Di"))
+                        .peek(System.out::println)
+                        .toList();
+
+
+        System.out.println(namesOfDiiimon + "\nКоличество Димонов: "  +  countDimon);
     }
 
 
