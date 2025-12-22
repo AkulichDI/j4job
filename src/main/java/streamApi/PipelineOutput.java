@@ -1,5 +1,8 @@
 package streamApi;
 
+import java.util.Arrays;
+import java.util.List;
+import java.util.Optional;
 import java.util.stream.Stream;
 
 public class PipelineOutput {
@@ -17,16 +20,23 @@ public class PipelineOutput {
                 .forEach(System.out::println);
     }*/
 
+        List<Integer> numbers = Arrays.asList(1, 2, 3, 4, 5);
+        List<Integer> numbers1 = Arrays.asList(1, 2, 3, 4, 5);
+        Optional<Integer> found = numbers1.stream()
+                .filter(n -> n > 5)
+                .findFirst();
+        found.ifPresent(n -> System.out.println("Found: " + n));
+        System.out.println(found);
+/*
         Stream.of("one", "one", "two", "three")
               .peek(System.out::println)
                 .distinct();
-
-
-
-
         String stream = Stream.of("one", "two", "three")
                 .peek(System.out::println)
                 .sorted().toString();
+ */
+
+
 
     }
 }
