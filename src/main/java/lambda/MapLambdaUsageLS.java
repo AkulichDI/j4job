@@ -1,5 +1,6 @@
 package lambda;
 
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.BiFunction;
@@ -62,7 +63,7 @@ public class MapLambdaUsageLS {
     }*/
 
 
-
+/*
     public static void main(String[] args) {
         Map<String, Integer> map = new HashMap<>();
         map.put("Shoes", 200);
@@ -72,5 +73,30 @@ public class MapLambdaUsageLS {
         System.out.println("Price of shirt: " + map.merge("Shirt", 100, function));
 
         map.forEach((key, value) -> System.out.println("Key: " + key + ", value: " + value));
+    }*/
+
+
+    public static void main(String[] args) {
+        System.out.println(new Date().getDate());
+
+        String input = "slogan of java language: write once, run everywhere".replaceAll(" ", "");
+        Map<Character, Integer> map = new HashMap<>();
+        for (char character : input.toCharArray()) {
+            Integer temp = map.get(character);
+            if (temp != null) {
+                map.put(character, temp + 1);
+            } else {
+                map.put(character, 1);
+            }
+        }
+        int max = 0;
+        char result = 0;
+        for (Map.Entry<Character, Integer> entry : map.entrySet()) {
+            if (max < entry.getValue()) {
+                max = entry.getValue();
+                result = entry.getKey();
+            }
+        }
+        System.out.println("Most used symbol: " + result);
     }
 }
