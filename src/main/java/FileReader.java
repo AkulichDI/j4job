@@ -151,7 +151,6 @@ public class FileReader {
              System.out.println(now.get());
 
              System.out.println(now.get());
-*/
 
 
 
@@ -176,6 +175,22 @@ public class FileReader {
 
              names.replaceAll(unar);
              System.out.println(names);
+
+ */
+
+
+             int[][] data = {
+                     {1, 2},
+                     {},
+                     {3, 4, 5}
+             };
+
+             for (int row = 0; row < data.length; row++) {
+                 for (int col = 0; col < data[row].length; col++) {
+                     System.out.println(data[row][col]);
+                 }
+             }
+
 
 
          }
