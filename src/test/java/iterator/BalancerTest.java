@@ -1,4 +1,4 @@
-package ru.job4j.iterator;
+package iterator;
 
 import iterator.Balancer;
 import org.junit.jupiter.api.Test;
