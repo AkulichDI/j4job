@@ -32,6 +32,9 @@ class CounterRunnable implements Runnable {
 
  class ThreadDemo {
     public static void main(String[] args) throws InterruptedException {
+
+        System.out.print("hl world");
+
         Thread t1 = new CounterThread();
         Thread t2 = new Thread(new CounterRunnable());
         t1.start();  // запускает CounterThread.run()
