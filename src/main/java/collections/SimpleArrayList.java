@@ -44,6 +44,7 @@ public class SimpleArrayList<T> implements SimpleList<T> {
     public T get(int index) {
         checkIndex(index);
         return (T) array[index];
+
     }
 
     @Override
