@@ -1,8 +1,7 @@
 package collections;
 
-import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
-import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.*;
+
 
 
 import  org.junit.jupiter.api.BeforeEach;
@@ -28,7 +27,7 @@ class SimpleArrayListTest {
     @Test
     void checkIterator() {
         assertThat(list.size()).isEqualTo(3);
-        assertThat(list).hasSameClassAs(3);
+        assertThat(list).hasSize(3);
     }
 
     @Test
