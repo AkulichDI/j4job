@@ -37,4 +37,32 @@ class ListUtilsTest {
         ListUtils.addAfter(input, 0, 2);
         assertThat(input).hasSize(3).containsSequence(1, 2, 3);
     }
+
+
+    @Test
+    void whenAddAfterWithInvalidIndex() {
+        assertThatThrownBy(() -> ListUtils.addAfter(input, 3, 2))
+                .isInstanceOf(IndexOutOfBoundsException.class);
+    }
+
+    @Test
+    void whenRemoveIf() {
+        input = new ArrayList<>(Arrays.asList(1, 2, 3, 4));
+        ListUtils.removeIf(input, i -> i % 2 == 0);
+        assertThat(input).containsSequence(1, 3);
+    }
+
+    @Test
+    void whenReplaceIf() {
+        input = new ArrayList<>(Arrays.asList(1, 2, 3, 4));
+        ListUtils.replaceIf(input, i -> i % 2 == 0, 0);
+        assertThat(input).containsSequence(1, 0, 3, 0);
+    }
+
+    @Test
+    void whenRemoveAll() {
+        input = new ArrayList<>(Arrays.asList(1, 2, 3, 4, 5));
+        ListUtils.removeAll(input, Arrays.asList(2, 4, 5));
+        assertThat(input).containsSequence(1, 3);
+    }
 }
