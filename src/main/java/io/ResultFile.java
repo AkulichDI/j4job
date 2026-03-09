@@ -1,9 +1,6 @@
 package io;
 
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.util.Arrays;
 
 public class ResultFile {
@@ -44,7 +41,7 @@ public class ResultFile {
 
 
 
-
+/*
         try (FileOutputStream output = new FileOutputStream("data/dataHomeWork1.txt")) {
             output.write(table(9).getBytes());
             output.write(System.lineSeparator().getBytes());
@@ -61,7 +58,19 @@ public class ResultFile {
             } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
+ */
 
+        try (PrintWriter output = new PrintWriter(
+                new BufferedOutputStream(
+                     new FileOutputStream("data/dataresult.txt")
+                ))) {
+            output.println("Hello, world!");
+            output.printf("%s%n", "Some string");
+            output.printf("%d%n", 10);
+            output.printf("%f%n", 1.5f);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
 
 
 
