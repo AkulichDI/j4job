@@ -1,12 +1,9 @@
 package converter;
 
-import javax.xml.crypto.Data;
 import java.io.*;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.Random;
 
@@ -53,50 +50,44 @@ public class ConsoleChat {
 
 
     public void run() {
-
         List<String> phrases = readPhrases();
         List<String> log = new ArrayList<>();
         boolean botActive = true;
         Random random = new Random();
         String userInput = "";
-        System.out.println("Привет! Я Олех \nДавайте познакомимся!");
+
+        System.out.println("Привет! Я Олех");
+        System.out.println("Давайте познакомимся!");
         System.out.println("Чтобы ознакомиться с функционалом напиши \"меню\"");
 
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
 
-            while ( !OUT.equals(userInput)){
-
+            while (!OUT.equals(userInput)) {
                 userInput = reader.readLine();
                 log.add("Пользователь: " + userInput + " Дата: " + LocalDateTime.now());
 
-                if (STOP.equals(userInput)){
+                if (STOP.equals(userInput)) {
                     botActive = false;
                 } else if (CONTINUE.equals(userInput)) {
                     botActive = true;
                 } else if (OUT.equals(userInput)) {
                     break;
                 } else if (MENU.equals(userInput)) {
-                    if ( botActive) {
-                        System.out.println("Меню:" + "\n" + "1. Стоп" + "\n" + "2. Продолжить" + "\n" + "3. Закончить");
-                        log.add("Меню:" + "\n" + "1. Стоп" + "\n" + "2. Продолжить" + "\n" + "3. Закончить");
-                    }
+                    String menu = "Меню:\n1. Стоп\n2. Продолжить\n3. Закончить";
+                    System.out.println(menu);
+                    log.add(menu);
                 } else if (botActive) {
-                    if (botActive) {
-                        String answer = phrases.get(random.nextInt(0, phrases.size() - 1));
-                        System.out.println(answer);
-                        log.add("Бот: " + answer + " Дата: " + LocalDateTime.now());
-                        saveLog(log);
-                    }
+                    String answer = phrases.get(random.nextInt(phrases.size()));
+                    System.out.println(answer);
+                    log.add("Бот: " + answer + " Дата: " + LocalDateTime.now());
                 }
-
             }
-
-
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            e.printStackTrace();
         }
 
-
+        saveLog(log);
     }
 
     private List<String> readPhrases() {
@@ -119,16 +110,14 @@ public class ConsoleChat {
     }
 
     private void saveLog(List<String> log) {
-
-        try (PrintWriter out = new PrintWriter(new BufferedWriter(new FileWriter(this.path, StandardCharsets.UTF_8, true)))){
-            for ( String line : log ){
+        try (PrintWriter out = new PrintWriter(
+                new BufferedWriter(new FileWriter(this.path, StandardCharsets.UTF_8, false)))) {
+            for (String line : log) {
                 out.println(line);
             }
-
-        }catch ( IOException e ){
+        } catch (IOException e) {
             e.printStackTrace();
         }
-
     }
 
     public static void main(String[] args) {
