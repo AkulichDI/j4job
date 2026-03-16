@@ -1,6 +1,14 @@
 package converter;
 
+import javax.xml.crypto.Data;
+import java.io.*;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.Random;
 
 public class ConsoleChat {
 
@@ -34,6 +42,7 @@ public class ConsoleChat {
     private static final String OUT = "закончить";
     private static final String STOP = "стоп";
     private static final String CONTINUE = "продолжить";
+    private static final String MENU = "меню";
     private final String path;
     private final String botAnswers;
 
@@ -45,20 +54,85 @@ public class ConsoleChat {
 
     public void run() {
 
+        List<String> phrases = readPhrases();
+        List<String> log = new ArrayList<>();
+        boolean botActive = true;
+        Random random = new Random();
+        String userInput = "";
+        System.out.println("Привет! Я Олех \nДавайте познакомимся!");
+        System.out.println("Чтобы ознакомиться с функционалом напиши \"меню\"");
+
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
+
+            while ( !OUT.equals(userInput)){
+
+                userInput = reader.readLine();
+                log.add("Пользователь: " + userInput + " Дата: " + LocalDateTime.now());
+
+                if (STOP.equals(userInput)){
+                    botActive = false;
+                } else if (CONTINUE.equals(userInput)) {
+                    botActive = true;
+                } else if (OUT.equals(userInput)) {
+                    break;
+                } else if (MENU.equals(userInput)) {
+                    if ( botActive) {
+                        System.out.println("Меню:" + "\n" + "1. Стоп" + "\n" + "2. Продолжить" + "\n" + "3. Закончить");
+                        log.add("Меню:" + "\n" + "1. Стоп" + "\n" + "2. Продолжить" + "\n" + "3. Закончить");
+                    }
+                } else if (botActive) {
+                    if (botActive) {
+                        String answer = phrases.get(random.nextInt(0, phrases.size() - 1));
+                        System.out.println(answer);
+                        log.add("Бот: " + answer + " Дата: " + LocalDateTime.now());
+                        saveLog(log);
+                    }
+                }
+
+            }
+
+
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+
 
     }
 
     private List<String> readPhrases() {
-        return null;
+
+
+        List<String> result = new ArrayList<>();
+
+        try(BufferedReader read = new BufferedReader(new FileReader(this.botAnswers, StandardCharsets.UTF_8 ))){
+
+            String line;
+            while ( (line = read.readLine()) != null ){
+                ValidatorLines.validateLine(line);
+                result.add(line);
+            }
+        }catch (IOException e ){
+            e.printStackTrace();
+        }
+
+        return result;
     }
 
     private void saveLog(List<String> log) {
 
+        try (PrintWriter out = new PrintWriter(new BufferedWriter(new FileWriter(this.path, StandardCharsets.UTF_8, true)))){
+            for ( String line : log ){
+                out.println(line);
+            }
+
+        }catch ( IOException e ){
+            e.printStackTrace();
+        }
 
     }
 
     public static void main(String[] args) {
-        ConsoleChat consoleChat = new ConsoleChat("", "");
+        ConsoleChat consoleChat = new ConsoleChat("./data/logFileChat.txt", "./data/dataResult.txt");
         consoleChat.run();
     }
 
