@@ -12,10 +12,12 @@ public class ReportEngine implements Report {
     private final Store store;
     private final DateTimeParser<Calendar> dateTimeParser;
 
-    public ReportEngine(Store store, DateTIimeParser<Calendar> dateTimeParser) {
+    public ReportEngine(Store store, DateTimeParser<Calendar> dateTimeParser) {
         this.store = store;
         this.dateTimeParser = dateTimeParser;
     }
+
+
 
     @Override
     public String generate(Predicate<Employee> filter) {
